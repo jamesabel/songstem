@@ -13,7 +13,20 @@ for the full specification.
 ## Requirements
 
 - Windows (x86, Intel/AMD), Python 3.11+
-- Apple Music / iTunes installed with an active subscription
+- Apple Music / iTunes installed (used to read playlists)
+
+## Supported audio sources (important)
+
+Songstem can only separate audio it can actually decode, which means **DRM-free** files:
+
+- ✅ CD rips, DRM-free purchases (`.m4a`), and `.mp3` files in your iTunes library
+- ❌ **DRM-protected `.m4p` files** — Apple Music subscription downloads and older
+  protected iTunes Store purchases use Apple FairPlay encryption (`drms`). Their audio
+  stream cannot be decoded by any tool, so they **cannot be separated**. Songstem detects
+  these, marks them `(DRM-protected)` in the song list, and skips them.
+
+An active Apple Music subscription does **not** make subscription tracks processable — those
+downloads are DRM-protected. To use a protected track, obtain a DRM-free copy of it.
 
 ## Setup
 

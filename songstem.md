@@ -53,3 +53,12 @@ Low latency is not a requirement.
 * Apple Music/iTunes is installed on the Windows machine this program will run on 
 * Runs on a system with modern and capable hardware.
 * An "x86" architecture processor (Intel or AMD)
+
+## Limitations
+
+* **DRM-protected tracks cannot be processed.** Apple Music subscription downloads and older
+  protected iTunes Store purchases are `.m4p` files encrypted with Apple FairPlay (`drms`
+  audio stream). No decoder can read them, so they cannot be separated into stems. Only
+  DRM-free sources work: CD rips, DRM-free purchases (`.m4a`), and MP3s. The iTunes library
+  is still used to read playlists and locate files; the subscription itself does not make
+  protected tracks usable.
