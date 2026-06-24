@@ -12,7 +12,7 @@ for the full specification.
 
 ## Requirements
 
-- Windows (x86, Intel/AMD), Python 3.11+
+- Windows (x86, Intel/AMD), **Python 3.11–3.13** (not 3.14 — PySide6 6.11 crashes on 3.14)
 - Apple Music / iTunes installed (used to read playlists)
 
 ## Supported audio sources (important)

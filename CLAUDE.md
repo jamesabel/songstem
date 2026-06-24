@@ -14,6 +14,13 @@ first use) and live iTunes COM (needs iTunes installed). Decoding iTunes `.m4a` 
 input relies on `ffmpeg` being on PATH — `audio.io.load` falls back to Demucs' ffmpeg reader
 when soundfile can't decode a file.
 
+### Runtime constraint
+
+Use **Python 3.11–3.13**, not 3.14. PySide6 6.11 crashes with a native fault
+(`0xC0000409`, faulting module `Qt6Core.dll`) on Python 3.14 — reproduced across multiple
+PySide6 apps, not a songstem bug. `setup_venv.bat` creates the venv with `py -3.13`;
+`requires-python` is capped `<3.14`. Raise the cap when a PySide6 release supports 3.14.
+
 ### Commands
 
 ```pwsh
