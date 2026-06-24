@@ -28,6 +28,45 @@ Songstem can only separate audio it can actually decode, which means **DRM-free*
 An active Apple Music subscription does **not** make subscription tracks processable — those
 downloads are DRM-protected. To use a protected track, obtain a DRM-free copy of it.
 
+## Loopback re-recording (personal use)
+
+For tracks you can play but not decode, songstem can **re-record an entire playlist** into
+DRM-free WAVs by capturing playback through a virtual audio cable, then load those WAVs as the
+separation source. This records audio output as it plays — it does **not** remove DRM — and is
+intended for **personal use only, not redistribution**.
+
+One-time setup:
+
+1. Install [VB-Audio Virtual Cable](https://vb-audio.com/Cable/) (free).
+2. Route iTunes' audio into the cable: Windows **Settings → System → Sound → Volume mixer**,
+   set iTunes' output device to **CABLE Input** (or set CABLE Input as the system default
+   output). To still hear playback, enable "Listen to this device" on **CABLE Output**, or use
+   VB-Audio Voicemeeter.
+3. Set iTunes volume to 100% and disable any sound enhancements.
+
+Then in songstem: select the playlist and click **"Re-record playlist → WAV (loopback)"**.
+Each track is played start-to-finish and captured to `…/output/recordings/<playlist>/`. When
+it finishes, that folder is loaded as the active source — select it and press **Run** to
+separate. (Capture is real-time, so a playlist takes about as long as its total runtime.)
+
+If a track is captured as silence, songstem flags it rather than saving an empty file — see
+below.
+
+### Recording over Remote Desktop (RDP)
+
+RDP redirects the remote machine's audio to your **local** client by default, making
+"Remote Audio" the default playback device. iTunes then plays into the RDP channel instead of
+the cable, so captures come out **silent**. To record over RDP:
+
+1. In the Remote Desktop client *before connecting*: **Local Resources → Remote audio →
+   Settings → "Play on remote computer."**
+2. On the remote machine, route iTunes to the cable — either set the **default** playback
+   device to **CABLE Input (VB-Audio)**, or per-app in **Settings → Sound → Volume mixer →
+   iTunes → Output → CABLE Input**.
+
+(Routing iTunes specifically to CABLE Input is what matters; it must not be playing to
+"Remote Audio".)
+
 ## Setup
 
 ```pwsh

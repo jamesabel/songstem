@@ -17,6 +17,7 @@ dependencies = [
     "soundfile>=0.12",       # audio read/write (libsndfile)
     "demucs>=4.0",           # default stem-separation backend
     "pref>=0.4",             # SQLite-backed persistence of GUI selection state
+    "sounddevice>=0.4",      # loopback capture from VB-Audio virtual cable
     "pywin32>=306 ; sys_platform == 'win32'",  # iTunes/Apple Music COM automation
 ]
 

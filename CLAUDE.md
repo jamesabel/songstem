@@ -52,9 +52,17 @@ behind a seam so the core logic stays importable and testable in isolation:
   restored on relaunch. Built on `pref.PrefStore`; `PrefOrderedSet.get(default=None)`
   distinguishes "never saved" (→ default to all songs) from "saved empty". Pass `file_name` to
   redirect the DB (tests do this). Dependency-light and testable without Qt.
+- `recording/` — loopback re-recording of DRM-protected playlists into DRM-free WAVs (personal
+  use; captures playback, does not remove DRM). `loopback.LoopbackRecorder` captures the
+  VB-Audio "CABLE Output" device via `sounddevice`; `itunes.playback.ITunesPlaybackController`
+  drives iTunes over COM; `session.record_playlist` is the testable batch loop (inject
+  `clock`/`sleep`). Both heavy seams have ABCs + fakes.
+- `folder_source.FolderLibrary` — a `LibrarySource` over a folder of audio files (the recorded
+  WAVs, CD rips, etc.), so non-iTunes audio can be selected and separated.
 - `gui/` + `app.py` + `__main__.py` — PySide bootstrap, `MainWindow` (playlist/song picker,
-  stem selector, per-stem gain sliders, output player), and `worker.BatchWorker`, a `QThread`
-  that runs the batch off the UI thread and emits per-song progress.
+  stem selector, per-stem gain sliders, output player, loopback re-record), and
+  `worker.BatchWorker` / `worker.RecordWorker`, `QThread`s that run separation / re-recording
+  off the UI thread and emit per-item progress.
 
 ### Conventions that matter
 

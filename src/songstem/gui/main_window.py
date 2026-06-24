@@ -32,11 +32,18 @@ from PySide6.QtWidgets import (
 from songstem.audio.io import is_drm_protected
 from songstem.audio.player import Player
 from songstem.config import Settings
-from songstem.gui.worker import BatchWorker
+from songstem.folder_source import FolderLibrary
+from songstem.gui.worker import BatchWorker, RecordWorker
 from songstem.itunes.library import LibrarySource
+from songstem.itunes.playback import ITunesPlaybackController
 from songstem.models import JobResult, SeparationJob, Song, StemType
+from songstem.recording.loopback import LoopbackRecorder
 from songstem.separation import get_backend
 from songstem.state import UiStateStore, song_key
+from songstem.utils.naming import sanitize
+
+
+_RECORD_LABEL = "Re-record playlist → WAV (loopback)"
 
 
 def _unprocessable_reason(song: Song) -> str | None:
@@ -58,6 +65,8 @@ class MainWindow(QMainWindow):
         self.source = source
         self.player = Player()
         self._worker: BatchWorker | None = None
+        self._record_worker: RecordWorker | None = None
+        self._recordings_dir: Path | None = None
         self._gain_sliders: dict[StemType, QSlider] = {}
         self._total_jobs = 0
         self._done_jobs = 0
@@ -135,6 +144,15 @@ class MainWindow(QMainWindow):
         self.run_button = QPushButton("Run")
         self.run_button.clicked.connect(self._run)
         layout.addWidget(self.run_button)
+
+        self.record_button = QPushButton(_RECORD_LABEL)
+        self.record_button.setToolTip(
+            "Capture the current playlist to DRM-free WAVs via VB-Audio Virtual Cable, then "
+            "load them as the source for separation. Personal use only."
+        )
+        self.record_button.clicked.connect(self._on_record_button)
+        layout.addWidget(self.record_button)
+
         layout.addStretch(1)
         return group
 
@@ -285,7 +303,7 @@ class MainWindow(QMainWindow):
         self._done_jobs = 0
         self.progress_bar.setRange(0, self._total_jobs)
         self.progress_bar.setValue(0)
-        self.run_button.setEnabled(False)
+        self._set_busy(True)
         self._log(f"Processing {self._total_jobs} song(s) — isolating {target.value}…")
 
         self._worker = BatchWorker(separator, jobs)
@@ -327,13 +345,80 @@ class MainWindow(QMainWindow):
     def _on_completed(self, results: list[JobResult]) -> None:
         ok = sum(1 for r in results if r.ok)
         self._log(f"Done. {ok}/{len(results)} succeeded.")
-        self.run_button.setEnabled(True)
+        self._set_busy(False)
         self._worker = None
 
     def _on_failed(self, message: str) -> None:
         self._log(f"Batch failed: {message}")
-        self.run_button.setEnabled(True)
+        self._set_busy(False)
         self._worker = None
+
+    # ------------------------------------------------------------ loopback recording
+
+    def _on_record_button(self) -> None:
+        # The button toggles: start a re-record, or stop one already in progress.
+        if self._record_worker is not None:
+            self._record_worker.requestInterruption()
+            self.record_button.setEnabled(False)
+            self.record_button.setText("Stopping…")
+            self._log("Stopping after the current track…")
+            return
+
+        playlist = self.playlist_combo.currentText()
+        if not playlist:
+            QMessageBox.information(self, "Songstem", "Select a playlist to re-record.")
+            return
+        self._recordings_dir = self.settings.output_dir / "recordings" / sanitize(playlist)
+        self.run_button.setEnabled(False)
+        self.record_button.setText("Stop recording")
+        self.progress_bar.setRange(0, 0)  # indeterminate; track count not known up front
+        self._log(
+            f"Re-recording '{playlist}' via loopback → {self._recordings_dir}. "
+            f"Ensure iTunes output is routed to 'CABLE Input'."
+        )
+        self._record_worker = RecordWorker(
+            ITunesPlaybackController(), LoopbackRecorder(), playlist, self._recordings_dir
+        )
+        self._record_worker.progress.connect(self._on_record_progress)
+        self._record_worker.completed.connect(self._on_record_completed)
+        self._record_worker.failed.connect(self._on_record_failed)
+        self._record_worker.start()
+
+    def _on_record_progress(self, result) -> None:
+        if result.ok:
+            self._log(f"● recorded {result.song.title}")
+        elif result.error == "cancelled":
+            self._log(f"■ stopped during {result.song.title}")
+        else:
+            self._log(f"✗ {result.song.title}: {result.error}")
+
+    def _on_record_completed(self, results: list) -> None:
+        ok = sum(1 for r in results if r.ok)
+        stopped = any(r.error == "cancelled" for r in results)
+        self.progress_bar.setRange(0, 1)
+        self.progress_bar.setValue(1)
+        verb = "stopped" if stopped else "done"
+        self._log(f"Re-recording {verb}. {ok}/{len(results)} captured → {self._recordings_dir}")
+        self._reset_record_ui()
+        if ok and self._recordings_dir is not None:
+            # Load the recorded folder as the active source so it can be separated.
+            self.source = FolderLibrary(self._recordings_dir)
+            self._refresh_playlists()
+            self._log("Loaded recorded folder as source — select it and press Run to separate.")
+
+    def _on_record_failed(self, message: str) -> None:
+        self._log(f"Re-recording failed: {message}")
+        self._reset_record_ui()
+
+    def _reset_record_ui(self) -> None:
+        self._record_worker = None
+        self.record_button.setText(_RECORD_LABEL)
+        self.record_button.setEnabled(True)
+        self.run_button.setEnabled(True)
+
+    def _set_busy(self, busy: bool) -> None:
+        self.run_button.setEnabled(not busy)
+        self.record_button.setEnabled(not busy)
 
     # ------------------------------------------------------------------ misc
 
@@ -351,6 +436,10 @@ class MainWindow(QMainWindow):
             self.player.load(Path(path))
 
     def closeEvent(self, event) -> None:
+        # Stop an in-progress re-record so the worker thread exits cleanly before we close.
+        if self._record_worker is not None:
+            self._record_worker.requestInterruption()
+            self._record_worker.wait()
         # Saves happen incrementally on change; persist once more on exit as a safety net.
         name = self.playlist_combo.currentText()
         if name:
