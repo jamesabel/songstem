@@ -399,12 +399,29 @@ class MainWindow(QMainWindow):
 
     def _on_record_completed(self, results: list) -> None:
         ok = sum(1 for r in results if r.ok)
+        silent = next((r for r in results if getattr(r, "silent", False)), None)
         stopped = any(r.error == "cancelled" for r in results)
         self.progress_bar.setRange(0, 1)
         self.progress_bar.setValue(1)
+        self._reset_record_ui()
+
+        if silent is not None:
+            # Aborted early because audio wasn't reaching the recorder — tell the user why so
+            # they can fix routing before retrying, instead of recording the whole playlist.
+            self._log(f"Re-recording aborted after a silent capture ({silent.song.title}).")
+            QMessageBox.warning(
+                self,
+                "Songstem — no audio captured",
+                "Re-recording was stopped because the first capture was silent — no audio is "
+                "reaching the recorder.\n\n"
+                "Check that iTunes' output is routed to 'CABLE Input', and if you are connected "
+                "over Remote Desktop, set remote audio to play on the remote computer. Then try "
+                "again.",
+            )
+            return
+
         verb = "stopped" if stopped else "done"
         self._log(f"Re-recording {verb}. {ok}/{len(results)} captured → {self._recordings_dir}")
-        self._reset_record_ui()
         if ok and self._recordings_dir is not None:
             # Load the recorded folder as the active source so it can be separated.
             self.source = FolderLibrary(self._recordings_dir)

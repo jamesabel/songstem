@@ -38,6 +38,7 @@ class RecordResult:
     song: Song
     path: Path | None = None
     error: str | None = None
+    silent: bool = False  # captured silence — signals the batch was aborted
 
     @property
     def ok(self) -> bool:
@@ -87,6 +88,10 @@ def record_playlist(
         results.append(result)
         if on_result is not None:
             on_result(result)
+        if result.silent:
+            # A silent capture means audio isn't reaching the recorder (routing/RDP). Abort
+            # rather than re-record the whole playlist into silence.
+            break
     return results
 
 
@@ -112,7 +117,7 @@ def _record_one(
         if cancelled:
             return RecordResult(song=track.song, error="cancelled")
         if _peak(clip) < _SILENCE_PEAK:
-            return RecordResult(song=track.song, error=_SILENCE_HINT)
+            return RecordResult(song=track.song, error=_SILENCE_HINT, silent=True)
         path = io.save(clip, output_dir / wav_filename(track.song))
         return RecordResult(song=track.song, path=path)
     except Exception as exc:

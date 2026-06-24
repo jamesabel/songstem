@@ -81,14 +81,17 @@ def test_record_playlist_writes_one_wav_per_track(tmp_path):
     assert io.load(results[0].path).sample_rate == 44100
 
 
-def test_silent_capture_is_flagged_not_saved(tmp_path):
-    # A silent recording (no audio reached the device, e.g. RDP redirection) is an error,
-    # and no WAV is written.
+def test_silent_capture_aborts_batch(tmp_path):
+    # A silent recording (no audio reached the device, e.g. RDP redirection) aborts the whole
+    # batch after the first track, writes no WAV, and is flagged silent.
+    controller = FakeController(_tracks())  # two tracks
     results = record_playlist(
-        FakeController(_tracks()), FakeRecorder(level=0.0), "P", tmp_path, sleep=lambda _s: None
+        controller, FakeRecorder(level=0.0), "P", tmp_path, sleep=lambda _s: None
     )
-    assert all(not r.ok for r in results)
+    assert len(results) == 1  # stopped after the first silent capture
+    assert results[0].silent is True
     assert "silence" in results[0].error
+    assert controller.played == ["One"]  # second track was never played
     assert list(tmp_path.glob("*.wav")) == []
 
 
