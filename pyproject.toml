@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "songstem"
+version = "0.1.0"
+description = "Real-time instrument removal for Apple Music on Windows — batch stem separation for music practice."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "James Abel", email = "j@abel.co" }]
+
+dependencies = [
+    "PySide6>=6.7",
+    "numpy>=1.26",
+    "soundfile>=0.12",       # audio read/write (libsndfile)
+    "demucs>=4.0",           # default stem-separation backend
+    "pywin32>=306 ; sys_platform == 'win32'",  # iTunes/Apple Music COM automation
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.4",
+]
+
+[project.gui-scripts]
+songstem = "songstem.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/songstem"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
