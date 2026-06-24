@@ -4,10 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current State
 
-**Scaffolded, mostly stubs.** The package, interfaces, build config, and a passing test
-suite exist; the heavy pieces (Demucs separation, iTunes COM, the PySide UI) are stubbed
-with `NotImplementedError` / `TODO` and are the work to be filled in. `songstem.md` is the
-product spec and remains the source of truth for requirements.
+**Implemented end to end.** Demucs separation, iTunes COM playlist reading, the PySide UI,
+the background batch worker, and robust audio loading are all in place; the dependency-light
+core plus a fake-separator pipeline integration test are covered by the suite. `songstem.md`
+is the product spec and remains the source of truth for requirements.
+
+Not yet exercised against real hardware here: actual Demucs runs (downloads a large model on
+first use) and live iTunes COM (needs iTunes installed). Decoding iTunes `.m4a` (AAC/ALAC)
+input relies on `ffmpeg` being on PATH — `audio.io.load` falls back to Demucs' ffmpeg reader
+when soundfile can't decode a file.
 
 ### Commands
 
@@ -42,7 +47,9 @@ behind a seam so the core logic stays importable and testable in isolation:
   to [-1, 1]), `player` (Qt Multimedia wrapper).
 - `pipeline/batch.py` — `BatchProcessor.run` drives jobs one song at a time; per-song failures
   become `JobResult.error` instead of aborting the batch.
-- `gui/` + `app.py` + `__main__.py` — PySide bootstrap and main window (scaffold).
+- `gui/` + `app.py` + `__main__.py` — PySide bootstrap, `MainWindow` (playlist/song picker,
+  stem selector, per-stem gain sliders, output player), and `worker.BatchWorker`, a `QThread`
+  that runs the batch off the UI thread and emits per-song progress.
 
 ### Conventions that matter
 

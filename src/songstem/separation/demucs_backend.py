@@ -1,7 +1,7 @@
 """Default separation backend, built on Demucs (htdemucs_6s).
 
-Demucs is imported lazily inside `separate` so the rest of the app — including the GUI and
-the test suite — can run without the (large) ML stack installed.
+Torch and Demucs are imported lazily inside the methods that use them so the rest of the
+app — including the GUI and the test suite — can run without the (large) ML stack loaded.
 """
 
 from __future__ import annotations
@@ -32,7 +32,40 @@ class DemucsSeparator(Separator):
     def supported_stems(self) -> set[StemType]:
         return set(_DEMUCS_6S_STEMS)
 
+    def _load_model(self):
+        if self._model is None:
+            from demucs.pretrained import get_model
+
+            model = get_model(self.model_name)  # downloads + caches on first call
+            model.to(self.device)
+            model.eval()
+            self._model = model
+        return self._model
+
     def separate(self, mix: AudioClip) -> dict[StemType, AudioClip]:
-        # TODO: lazy-load the Demucs model (demucs.pretrained.get_model), run
-        # apply_model on `mix.samples`, and map each output source name to a StemType.
-        raise NotImplementedError("Demucs separation not yet implemented")
+        import numpy as np
+        import torch
+        from demucs.apply import apply_model
+        from demucs.audio import convert_audio
+
+        model = self._load_model()
+
+        wav = torch.from_numpy(np.ascontiguousarray(mix.samples)).to(torch.float32)
+        # Demucs expects (channels, length) at the model's sample rate / channel count.
+        wav = convert_audio(wav, mix.sample_rate, model.samplerate, model.audio_channels)
+
+        # Standardize then restore scale, mirroring demucs.separate.
+        ref = wav.mean(0)
+        std = ref.std() + 1e-8
+        wav = (wav - ref.mean()) / std
+        with torch.no_grad():
+            est = apply_model(model, wav[None], device=self.device, progress=False)[0]
+        est = est * std + ref.mean()
+
+        stems: dict[StemType, AudioClip] = {}
+        for name, source in zip(model.sources, est):
+            stems[StemType(name)] = AudioClip(
+                samples=source.cpu().numpy().astype("float32"),
+                sample_rate=model.samplerate,
+            )
+        return stems

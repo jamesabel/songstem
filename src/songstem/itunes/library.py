@@ -26,26 +26,68 @@ class LibrarySource(ABC):
 
 
 class ITunesLibrary(LibrarySource):
-    """Windows COM-backed implementation (iTunes / Apple Music)."""
+    """Windows COM-backed implementation (iTunes / Apple Music).
+
+    iTunes COM collections are 1-indexed via `.Item(i)` over `.Count`; we use that rather
+    than Python iteration for predictable behavior across pywin32 versions.
+    """
 
     def __init__(self) -> None:
         self._app = None  # the iTunes.Application COM object, connected on first use
 
     def _connect(self):
         if self._app is None:
-            # TODO: import win32com.client and dispatch "iTunes.Application".
-            # Kept lazy so non-Windows dev environments can import this module.
-            raise NotImplementedError("iTunes COM connection not yet implemented")
+            # Imported lazily so non-Windows dev environments can import this module.
+            import win32com.client
+
+            self._app = win32com.client.Dispatch("iTunes.Application")
         return self._app
 
+    def _playlists(self):
+        return self._connect().LibrarySource.Playlists
+
     def playlist_names(self) -> list[str]:
-        # TODO: iterate app.LibrarySource.Playlists, return .Name for each.
-        raise NotImplementedError
+        playlists = self._playlists()
+        return [playlists.Item(i).Name for i in range(1, playlists.Count + 1)]
 
     def songs_in_playlist(self, name: str) -> list[Song]:
-        # TODO: locate the playlist, iterate Tracks, map to Song(...). Track.Location
-        # gives the local file path (may be empty for cloud-only tracks).
-        raise NotImplementedError
+        playlists = self._playlists()
+        playlist = None
+        for i in range(1, playlists.Count + 1):
+            candidate = playlists.Item(i)
+            if candidate.Name == name:
+                playlist = candidate
+                break
+        if playlist is None:
+            return []
+
+        songs: list[Song] = []
+        tracks = playlist.Tracks
+        for i in range(1, tracks.Count + 1):
+            track = tracks.Item(i)
+            songs.append(_track_to_song(track))
+        return songs
+
+
+def _track_to_song(track) -> Song:
+    """Map an iTunes COM track object to a Song, tolerating missing fields."""
+    # Location is empty for cloud-only tracks and can raise for stream/URL tracks.
+    try:
+        location = track.Location
+    except Exception:
+        location = None
+    persistent_id = ""
+    try:
+        persistent_id = str(track.TrackDatabaseID)
+    except Exception:
+        pass
+    return Song(
+        title=track.Name or "",
+        artist=track.Artist or "",
+        album=track.Album or "",
+        location=Path(location) if location else None,
+        persistent_id=persistent_id,
+    )
 
 
 class FakeLibrary(LibrarySource):
