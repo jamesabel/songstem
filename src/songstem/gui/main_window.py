@@ -29,6 +29,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from dataclasses import replace
+
 from songstem.audio.io import is_drm_protected
 from songstem.audio.player import Player
 from songstem.config import Settings
@@ -38,24 +40,18 @@ from songstem.itunes.library import LibrarySource
 from songstem.itunes.playback import ITunesPlaybackController
 from songstem.models import JobResult, SeparationJob, Song, StemType
 from songstem.recording.loopback import LoopbackRecorder
+from songstem.recording.session import wav_filename
 from songstem.separation import get_backend
 from songstem.state import UiStateStore, song_key
 from songstem.utils.naming import sanitize
 
-
 _RECORD_LABEL = "Re-record playlist → WAV (loopback)"
-
-
-def _unprocessable_reason(song: Song) -> str | None:
-    """Why a song can't be processed, or None if it can.
-
-    Used to disable the song in the list up front rather than failing during the batch.
-    """
-    if song.location is None:
-        return "no local file"
-    if is_drm_protected(song.location):
-        return "DRM-protected"
-    return None
+# Item data role holding the resolved audio source path (str), or None if unavailable.
+_SOURCE_ROLE = Qt.UserRole + 1
+_NEEDS_AUDIO_TOOLTIP = (
+    "No usable audio for this song. Either add a DRM-free version of it to your library, "
+    "or use “Re-record playlist → WAV (loopback)” to capture it first."
+)
 
 
 class MainWindow(QMainWindow):
@@ -254,8 +250,12 @@ class MainWindow(QMainWindow):
                 return
             saved = self.state.get_selected_songs(playlist_name)  # list[str] | None
             for song in songs:
-                blocked = _unprocessable_reason(song)  # None if the song can be processed
-                item = QListWidgetItem(self._song_label(song, blocked))
+                source = self._resolve_source_path(song, playlist_name)  # Path | None
+                blocked = source is None
+                rerecorded = source is not None and not _is_original(song, source)
+                note = "needs re-record" if blocked else ("re-recorded" if rerecorded else None)
+
+                item = QListWidgetItem(self._song_label(song, note))
                 item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
                 if blocked:
                     checked = False
@@ -266,10 +266,18 @@ class MainWindow(QMainWindow):
                 item.setCheckState(Qt.Checked if checked else Qt.Unchecked)
                 if blocked:
                     item.setFlags(item.flags() & ~Qt.ItemIsEnabled)
+                    item.setToolTip(_NEEDS_AUDIO_TOOLTIP)
                 item.setData(Qt.UserRole, song)
+                item.setData(_SOURCE_ROLE, str(source) if source is not None else None)
                 self.song_list.addItem(item)
         finally:
             self._populating = False
+
+    def _recordings_dir_for(self, playlist_name: str) -> Path:
+        return self.settings.output_dir / "recordings" / sanitize(playlist_name)
+
+    def _resolve_source_path(self, song: Song, playlist_name: str) -> Path | None:
+        return resolve_source(song, self._recordings_dir_for(playlist_name))
 
     def _on_item_changed(self, _item: QListWidgetItem) -> None:
         if self._populating:
@@ -325,6 +333,11 @@ class MainWindow(QMainWindow):
             if item.checkState() != Qt.Checked:
                 continue
             song: Song = item.data(Qt.UserRole)
+            source = item.data(_SOURCE_ROLE)
+            if source:
+                # Process the resolved source (a re-recorded WAV when the original is DRM /
+                # missing), keeping the title/artist for output naming.
+                song = replace(song, location=Path(source))
             jobs.append(
                 SeparationJob(
                     song=song,
@@ -373,7 +386,7 @@ class MainWindow(QMainWindow):
         if not playlist:
             QMessageBox.information(self, "Songstem", "Select a playlist to re-record.")
             return
-        self._recordings_dir = self.settings.output_dir / "recordings" / sanitize(playlist)
+        self._recordings_dir = self._recordings_dir_for(playlist)
         self.run_button.setEnabled(False)
         self.record_button.setText("Stop recording")
         self.progress_bar.setRange(0, 0)  # indeterminate; track count not known up front
@@ -512,9 +525,30 @@ class MainWindow(QMainWindow):
         super().closeEvent(event)
 
     @staticmethod
-    def _song_label(song: Song, blocked: str | None = None) -> str:
+    def _song_label(song: Song, note: str | None = None) -> str:
         label = f"{song.artist} — {song.title}" if song.artist else song.title
-        return label + (f"  ({blocked})" if blocked else "")
+        return label + (f"  ({note})" if note else "")
 
     def _log(self, message: str) -> None:
         self.log.appendPlainText(message)
+
+
+def _is_original(song: Song, source: Path) -> bool:
+    """True if `source` is the song's own (DRM-free) file rather than a re-recorded WAV."""
+    return song.location is not None and Path(song.location) == source
+
+
+def resolve_source(song: Song, recordings_dir: Path) -> Path | None:
+    """The audio file songstem would actually process for `song`, or None if unavailable.
+
+    Prefers a DRM-free original file (present and not `.m4p`); falls back to a previously
+    re-recorded WAV in `recordings_dir`. Returns None only when neither exists — that is the
+    sole condition under which a song is greyed out in the list.
+    """
+    location = song.location
+    if location is not None and not is_drm_protected(location) and Path(location).exists():
+        return Path(location)
+    wav = recordings_dir / wav_filename(song)
+    if wav.exists():
+        return wav
+    return None

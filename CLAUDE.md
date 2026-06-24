@@ -69,7 +69,9 @@ behind a seam so the core logic stays importable and testable in isolation:
 - `gui/` + `app.py` + `__main__.py` — PySide bootstrap, `MainWindow` (playlist/song picker,
   stem selector, per-stem gain sliders, output player, loopback re-record), and
   `worker.BatchWorker` / `worker.RecordWorker`, `QThread`s that run separation / re-recording
-  off the UI thread and emit per-item progress.
+  off the UI thread and emit per-item progress. `main_window.resolve_source(song, recordings_dir)`
+  decides each song's processable file (DRM-free original, else a re-recorded WAV); a song is
+  greyed out only when neither exists, and Run separates the resolved source.
 
 ### Conventions that matter
 
