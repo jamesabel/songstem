@@ -50,7 +50,10 @@ it finishes, that folder is loaded as the active source — select it and press 
 separate. (Capture is real-time, so a playlist takes about as long as its total runtime.)
 
 If a track is captured as silence, songstem flags it rather than saving an empty file — see
-below.
+below. Re-recording is **resumable**: a track is skipped if its output WAV already exists, has
+real audio, and is long enough (compared to the iTunes track length, or ≥1s if unknown). Each
+file is written atomically (temp file, then moved into place), so a crash or shutdown never
+leaves a partial file — the next run simply re-records whatever isn't complete.
 
 ### Recording over Remote Desktop (RDP)
 

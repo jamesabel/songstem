@@ -95,6 +95,44 @@ def test_silent_capture_aborts_batch(tmp_path):
     assert list(tmp_path.glob("*.wav")) == []
 
 
+def _write_wav(path, seconds, level=0.5, sr=8000):
+    frames = int(seconds * sr)
+    io.save(AudioClip(np.full((2, frames), level, dtype=np.float32), sr), path)
+
+
+def test_skips_existing_valid_output(tmp_path):
+    # A complete, non-silent output for "One" already exists → it is skipped, not played.
+    _write_wav(tmp_path / "A - One.wav", seconds=1.5)
+    controller = FakeController(_tracks())  # One, Two (duration 1.0 each)
+    results = record_playlist(controller, FakeRecorder(), "P", tmp_path, sleep=lambda _s: None)
+
+    assert controller.played == ["Two"]
+    one = next(r for r in results if r.song.title == "One")
+    assert one.skipped and one.ok and one.path.exists()
+
+
+def test_silent_or_short_existing_output_is_rerecorded(tmp_path):
+    _write_wav(tmp_path / "A - One.wav", seconds=2.0, level=0.0)  # silent → re-record
+    _write_wav(tmp_path / "B - Two.wav", seconds=0.3)  # too short → re-record
+    controller = FakeController(_tracks())
+    record_playlist(controller, FakeRecorder(), "P", tmp_path, sleep=lambda _s: None)
+    assert controller.played == ["One", "Two"]
+
+
+def test_skip_uses_itunes_duration(tmp_path):
+    track = RecordableTrack(song=Song(title="Long", artist="A"), duration=10.0)
+    # Nearly full-length existing file (>= 90% of 10s) → skipped.
+    _write_wav(tmp_path / "A - Long.wav", seconds=9.5)
+    c1 = FakeController([track])
+    record_playlist(c1, FakeRecorder(), "P", tmp_path, sleep=lambda _s: None)
+    assert c1.played == []
+    # Half-length file (< 90%) → re-recorded.
+    _write_wav(tmp_path / "A - Long.wav", seconds=4.0)
+    c2 = FakeController([track])
+    record_playlist(c2, FakeRecorder(), "P", tmp_path, sleep=lambda _s: None)
+    assert c2.played == ["Long"]
+
+
 def test_should_stop_halts_between_tracks(tmp_path):
     seen = {"n": 0}
 

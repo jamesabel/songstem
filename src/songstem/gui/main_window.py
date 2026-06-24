@@ -390,7 +390,9 @@ class MainWindow(QMainWindow):
         self._record_worker.start()
 
     def _on_record_progress(self, result) -> None:
-        if result.ok:
+        if getattr(result, "skipped", False):
+            self._log(f"↷ skipped {result.song.title} (already recorded)")
+        elif result.ok:
             self._log(f"● recorded {result.song.title}")
         elif result.error == "cancelled":
             self._log(f"■ stopped during {result.song.title}")
@@ -420,8 +422,14 @@ class MainWindow(QMainWindow):
             )
             return
 
+        skipped = sum(1 for r in results if getattr(r, "skipped", False))
+        recorded = ok - skipped
         verb = "stopped" if stopped else "done"
-        self._log(f"Re-recording {verb}. {ok}/{len(results)} captured → {self._recordings_dir}")
+        skipped_note = f", {skipped} already present" if skipped else ""
+        self._log(
+            f"Re-recording {verb}. {recorded} recorded{skipped_note} "
+            f"→ {self._recordings_dir}"
+        )
         if ok and self._recordings_dir is not None:
             # Load the recorded folder as the active source so it can be separated.
             self.source = FolderLibrary(self._recordings_dir)

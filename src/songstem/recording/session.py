@@ -30,6 +30,12 @@ _SILENCE_HINT = (
     "'CABLE Input'; if connected over RDP, set remote audio to play on the remote computer."
 )
 
+# An existing output is "good enough to skip" if it is non-silent and at least this fraction
+# of the iTunes-reported duration (so partial/interrupted captures are re-recorded). When the
+# duration is unknown, fall back to a 1-second floor.
+_MIN_LENGTH_FRACTION = 0.9
+_MIN_LENGTH_SECONDS = 1.0
+
 ProgressCallback = Callable[["RecordResult"], None]
 
 
@@ -39,6 +45,7 @@ class RecordResult:
     path: Path | None = None
     error: str | None = None
     silent: bool = False  # captured silence — signals the batch was aborted
+    skipped: bool = False  # a valid output already existed; not re-recorded
 
     @property
     def ok(self) -> bool:
@@ -75,16 +82,22 @@ def record_playlist(
     when it returns True the batch stops promptly and the in-progress track is not saved.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
+    for stale in output_dir.glob("*.tmp"):  # leftover temp files from a prior crash
+        stale.unlink(missing_ok=True)
     results: list[RecordResult] = []
     for track in controller.playlist_tracks(playlist_name):
         if should_stop():
             break
-        result = _record_one(
-            controller, recorder, track, output_dir,
-            lead_in=lead_in, tail=tail, poll=poll,
-            startup_timeout=startup_timeout, max_overrun=max_overrun,
-            clock=clock, sleep=sleep, should_stop=should_stop,
-        )
+        existing = output_dir / wav_filename(track.song)
+        if _output_already_good(existing, track.duration):
+            result = RecordResult(song=track.song, path=existing, skipped=True)
+        else:
+            result = _record_one(
+                controller, recorder, track, output_dir,
+                lead_in=lead_in, tail=tail, poll=poll,
+                startup_timeout=startup_timeout, max_overrun=max_overrun,
+                clock=clock, sleep=sleep, should_stop=should_stop,
+            )
         results.append(result)
         if on_result is not None:
             on_result(result)
@@ -118,7 +131,9 @@ def _record_one(
             return RecordResult(song=track.song, error="cancelled")
         if _peak(clip) < _SILENCE_PEAK:
             return RecordResult(song=track.song, error=_SILENCE_HINT, silent=True)
-        path = io.save(clip, output_dir / wav_filename(track.song))
+        # Atomic write so a crash/shutdown never leaves a partial .wav in the output dir
+        # (which the skip-existing check would otherwise trust as complete).
+        path = io.save_atomic(clip, output_dir / wav_filename(track.song))
         return RecordResult(song=track.song, path=path)
     except Exception as exc:
         return RecordResult(song=track.song, error=str(exc))
@@ -126,6 +141,17 @@ def _record_one(
 
 def _peak(clip: AudioClip) -> float:
     return float(np.max(np.abs(clip.samples))) if clip.samples.size else 0.0
+
+
+def _output_already_good(path: Path, expected_duration: float) -> bool:
+    """True if `path` already holds a usable recording, so the track can be skipped."""
+    if not path.exists():
+        return False
+    if expected_duration > 0:
+        min_len = max(_MIN_LENGTH_SECONDS, _MIN_LENGTH_FRACTION * expected_duration)
+    else:
+        min_len = _MIN_LENGTH_SECONDS
+    return io.has_audio_content(path, min_len, _SILENCE_PEAK)
 
 
 def _wait_for_track(
