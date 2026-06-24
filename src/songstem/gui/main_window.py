@@ -35,6 +35,7 @@ from songstem.gui.worker import BatchWorker
 from songstem.itunes.library import LibrarySource
 from songstem.models import JobResult, SeparationJob, Song, StemType
 from songstem.separation import get_backend
+from songstem.state import UiStateStore, song_key
 
 
 class MainWindow(QMainWindow):
@@ -47,6 +48,12 @@ class MainWindow(QMainWindow):
         self._gain_sliders: dict[StemType, QSlider] = {}
         self._total_jobs = 0
         self._done_jobs = 0
+
+        # Persisted selection state. _populating suppresses save signals while the song
+        # list is being filled; _restoring does the same while playlists are first loaded.
+        self.state = UiStateStore()
+        self._populating = False
+        self._restoring = False
 
         self.setWindowTitle("Songstem")
         self.resize(960, 640)
@@ -69,7 +76,7 @@ class MainWindow(QMainWindow):
         row = QHBoxLayout()
         row.addWidget(QLabel("Playlist:"))
         self.playlist_combo = QComboBox()
-        self.playlist_combo.currentTextChanged.connect(self._load_songs)
+        self.playlist_combo.currentTextChanged.connect(self._on_playlist_changed)
         row.addWidget(self.playlist_combo, stretch=1)
         refresh = QPushButton("Refresh")
         refresh.clicked.connect(self._refresh_playlists)
@@ -82,6 +89,7 @@ class MainWindow(QMainWindow):
         songs_group = QGroupBox("Songs (checked are processed)")
         songs_layout = QVBoxLayout(songs_group)
         self.song_list = QListWidget()
+        self.song_list.itemChanged.connect(self._on_item_changed)
         songs_layout.addWidget(self.song_list)
         row.addWidget(songs_group, stretch=2)
 
@@ -171,35 +179,78 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------ data load
 
     def _refresh_playlists(self) -> None:
-        self.playlist_combo.clear()
+        self._restoring = True
         try:
-            names = self.source.playlist_names()
-        except Exception as exc:
-            self._log(f"Could not read playlists: {exc}")
-            self.run_button.setEnabled(False)
-            return
-        self.run_button.setEnabled(True)
-        self.playlist_combo.addItems(names)
-        if not names:
-            self._log("No playlists found.")
+            self.playlist_combo.clear()
+            try:
+                names = self.source.playlist_names()
+            except Exception as exc:
+                self._log(f"Could not read playlists: {exc}")
+                self.run_button.setEnabled(False)
+                return
+            self.run_button.setEnabled(True)
+            self.playlist_combo.addItems(names)
+            if not names:
+                self._log("No playlists found.")
+                return
+            # Restore the previously selected playlist (which restores its song checks).
+            saved = self.state.selected_playlist
+            if saved in names and self.playlist_combo.currentText() != saved:
+                self.playlist_combo.setCurrentText(saved)
+        finally:
+            self._restoring = False
+
+    def _on_playlist_changed(self, playlist_name: str) -> None:
+        self._load_songs(playlist_name)
+        if not self._restoring:
+            self.state.selected_playlist = playlist_name  # persists immediately
 
     def _load_songs(self, playlist_name: str) -> None:
-        self.song_list.clear()
-        if not playlist_name:
-            return
+        self._populating = True  # suppress per-item save signals during fill
         try:
-            songs = self.source.songs_in_playlist(playlist_name)
-        except Exception as exc:
-            self._log(f"Could not read songs: {exc}")
+            self.song_list.clear()
+            if not playlist_name:
+                return
+            try:
+                songs = self.source.songs_in_playlist(playlist_name)
+            except Exception as exc:
+                self._log(f"Could not read songs: {exc}")
+                return
+            saved = self.state.get_selected_songs(playlist_name)  # list[str] | None
+            for song in songs:
+                item = QListWidgetItem(self._song_label(song))
+                item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+                if song.location is None:
+                    checked = False  # cloud-only, no local file to process
+                elif saved is None:
+                    checked = True  # never saved → default to selected
+                else:
+                    checked = song_key(song) in saved
+                item.setCheckState(Qt.Checked if checked else Qt.Unchecked)
+                if song.location is None:
+                    item.setFlags(item.flags() & ~Qt.ItemIsEnabled)
+                item.setData(Qt.UserRole, song)
+                self.song_list.addItem(item)
+        finally:
+            self._populating = False
+
+    def _on_item_changed(self, _item: QListWidgetItem) -> None:
+        if self._populating:
             return
-        for song in songs:
-            item = QListWidgetItem(self._song_label(song))
-            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-            item.setCheckState(Qt.Unchecked if song.location is None else Qt.Checked)
-            if song.location is None:
-                item.setFlags(item.flags() & ~Qt.ItemIsEnabled)  # cloud-only, no file
-            item.setData(Qt.UserRole, song)
-            self.song_list.addItem(item)
+        self._save_current_songs()
+
+    def _save_current_songs(self) -> None:
+        name = self.playlist_combo.currentText()
+        if name:
+            self.state.set_selected_songs(name, self._checked_song_keys())
+
+    def _checked_song_keys(self) -> list[str]:
+        keys: list[str] = []
+        for i in range(self.song_list.count()):
+            item = self.song_list.item(i)
+            if item.checkState() == Qt.Checked:
+                keys.append(song_key(item.data(Qt.UserRole)))
+        return keys
 
     # ------------------------------------------------------------------ run batch
 
@@ -284,6 +335,14 @@ class MainWindow(QMainWindow):
         path = self.output_combo.itemData(index)
         if path is not None:
             self.player.load(Path(path))
+
+    def closeEvent(self, event) -> None:
+        # Saves happen incrementally on change; persist once more on exit as a safety net.
+        name = self.playlist_combo.currentText()
+        if name:
+            self.state.selected_playlist = name
+            self.state.set_selected_songs(name, self._checked_song_keys())
+        super().closeEvent(event)
 
     @staticmethod
     def _song_label(song: Song) -> str:

@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 APP_NAME = "Songstem"
+APP_AUTHOR = "abel.co"  # used by `pref` to locate the SQLite state DB
 
 
 def _default_root() -> Path:

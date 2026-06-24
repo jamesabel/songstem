@@ -47,6 +47,11 @@ behind a seam so the core logic stays importable and testable in isolation:
   to [-1, 1]), `player` (Qt Multimedia wrapper).
 - `pipeline/batch.py` — `BatchProcessor.run` drives jobs one song at a time; per-song failures
   become `JobResult.error` instead of aborting the batch.
+- `state.py` — SQLite-backed UI persistence via the `pref` library (>=0.4). `UiStateStore`
+  remembers the last-selected playlist and per-playlist checked songs (keyed by `song_key`),
+  restored on relaunch. Built on `pref.PrefStore`; `PrefOrderedSet.get(default=None)`
+  distinguishes "never saved" (→ default to all songs) from "saved empty". Pass `file_name` to
+  redirect the DB (tests do this). Dependency-light and testable without Qt.
 - `gui/` + `app.py` + `__main__.py` — PySide bootstrap, `MainWindow` (playlist/song picker,
   stem selector, per-stem gain sliders, output player), and `worker.BatchWorker`, a `QThread`
   that runs the batch off the UI thread and emits per-song progress.
