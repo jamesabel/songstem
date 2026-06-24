@@ -23,8 +23,9 @@ _DEMUCS_6S_STEMS = {
 class DemucsSeparator(Separator):
     name = "demucs"
 
-    def __init__(self, model_name: str = "htdemucs_6s") -> None:
+    def __init__(self, model_name: str = "htdemucs_6s", device: str = "cpu") -> None:
         self.model_name = model_name
+        self.device = device  # "cpu" default; pass "cuda" when a GPU build is available
         self._model = None  # loaded on first use
 
     @property

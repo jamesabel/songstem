@@ -28,6 +28,10 @@ class Settings:
     model_dir: Path = field(default_factory=lambda: _default_root() / "models")
     # Name of the registered separation backend to use (see separation.registry).
     backend: str = "demucs"
+    # Torch device for separation. "cpu" for broad compatibility (default); set to
+    # "cuda" once a capable GPU + CUDA torch build are available. Low latency is a
+    # non-goal, so CPU batch processing is acceptable.
+    device: str = "cpu"
     # Output audio format/container written by audio.io.
     output_format: str = "wav"
 
