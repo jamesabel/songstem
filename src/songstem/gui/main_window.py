@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from songstem.audio.io import is_drm_protected
 from songstem.audio.player import Player
 from songstem.config import Settings
 from songstem.gui.worker import BatchWorker
@@ -36,6 +37,18 @@ from songstem.itunes.library import LibrarySource
 from songstem.models import JobResult, SeparationJob, Song, StemType
 from songstem.separation import get_backend
 from songstem.state import UiStateStore, song_key
+
+
+def _unprocessable_reason(song: Song) -> str | None:
+    """Why a song can't be processed, or None if it can.
+
+    Used to disable the song in the list up front rather than failing during the batch.
+    """
+    if song.location is None:
+        return "no local file"
+    if is_drm_protected(song.location):
+        return "DRM-protected"
+    return None
 
 
 class MainWindow(QMainWindow):
@@ -218,16 +231,17 @@ class MainWindow(QMainWindow):
                 return
             saved = self.state.get_selected_songs(playlist_name)  # list[str] | None
             for song in songs:
-                item = QListWidgetItem(self._song_label(song))
+                blocked = _unprocessable_reason(song)  # None if the song can be processed
+                item = QListWidgetItem(self._song_label(song, blocked))
                 item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-                if song.location is None:
-                    checked = False  # cloud-only, no local file to process
+                if blocked:
+                    checked = False
                 elif saved is None:
                     checked = True  # never saved → default to selected
                 else:
                     checked = song_key(song) in saved
                 item.setCheckState(Qt.Checked if checked else Qt.Unchecked)
-                if song.location is None:
+                if blocked:
                     item.setFlags(item.flags() & ~Qt.ItemIsEnabled)
                 item.setData(Qt.UserRole, song)
                 self.song_list.addItem(item)
@@ -345,9 +359,9 @@ class MainWindow(QMainWindow):
         super().closeEvent(event)
 
     @staticmethod
-    def _song_label(song: Song) -> str:
+    def _song_label(song: Song, blocked: str | None = None) -> str:
         label = f"{song.artist} — {song.title}" if song.artist else song.title
-        return label + ("  (no local file)" if song.location is None else "")
+        return label + (f"  ({blocked})" if blocked else "")
 
     def _log(self, message: str) -> None:
         self.log.appendPlainText(message)
