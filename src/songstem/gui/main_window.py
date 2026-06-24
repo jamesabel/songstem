@@ -389,7 +389,7 @@ class MainWindow(QMainWindow):
         self._recordings_dir = self._recordings_dir_for(playlist)
         self.run_button.setEnabled(False)
         self.record_button.setText("Stop recording")
-        self.progress_bar.setRange(0, 0)  # indeterminate; track count not known up front
+        self.progress_bar.setRange(0, 0)  # indeterminate until the first track reports a total
         self._log(
             f"Re-recording '{playlist}' via loopback → {self._recordings_dir}. "
             f"Ensure iTunes output is routed to 'CABLE Input'."
@@ -397,16 +397,26 @@ class MainWindow(QMainWindow):
         self._record_worker = RecordWorker(
             ITunesPlaybackController(), LoopbackRecorder(), playlist, self._recordings_dir
         )
+        self._record_worker.started_track.connect(self._on_record_started)
         self._record_worker.progress.connect(self._on_record_progress)
         self._record_worker.completed.connect(self._on_record_completed)
         self._record_worker.failed.connect(self._on_record_failed)
         self._record_worker.start()
 
+    def _on_record_started(self, song, index: int, total: int) -> None:
+        # Switch to a determinate bar now that the track count is known, and show the song
+        # currently being captured (recording is real-time, so this is the only live signal).
+        self.progress_bar.setRange(0, total)
+        self.progress_bar.setValue(index - 1)
+        self.progress_bar.setFormat(f"Recording {index}/{total}…")
+        self.progress_bar.setTextVisible(True)
+        self._log(f"▶ recording {song.title} ({index}/{total})…")
+
     def _on_record_progress(self, result) -> None:
         if getattr(result, "skipped", False):
             self._log(f"↷ skipped {result.song.title} (already recorded)")
         elif result.ok:
-            self._log(f"● recorded {result.song.title}")
+            self._log(f"✓ recorded {result.song.title}")
         elif result.error == "cancelled":
             self._log(f"■ stopped during {result.song.title}")
         else:
@@ -455,6 +465,8 @@ class MainWindow(QMainWindow):
 
     def _reset_record_ui(self) -> None:
         self._record_worker = None
+        self.progress_bar.setFormat("")  # clear the "Recording N/M…" text
+        self.progress_bar.setTextVisible(False)
         self.record_button.setText(_RECORD_LABEL)
         self.record_button.setEnabled(True)
         self.run_button.setEnabled(True)

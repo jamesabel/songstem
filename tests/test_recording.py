@@ -81,6 +81,33 @@ def test_record_playlist_writes_one_wav_per_track(tmp_path):
     assert io.load(results[0].path).sample_rate == 44100
 
 
+def test_on_track_start_fires_before_each_recorded_track(tmp_path):
+    starts = []
+    record_playlist(
+        FakeController(_tracks()),
+        FakeRecorder(),
+        "P",
+        tmp_path,
+        on_track_start=lambda song, i, n: starts.append((song.title, i, n)),
+        sleep=lambda _s: None,
+    )
+    assert starts == [("One", 1, 2), ("Two", 2, 2)]
+
+
+def test_on_track_start_skips_already_recorded(tmp_path):
+    _write_wav(tmp_path / "A - One.wav", seconds=1.5)  # "One" already present → skipped
+    starts = []
+    record_playlist(
+        FakeController(_tracks()),
+        FakeRecorder(),
+        "P",
+        tmp_path,
+        on_track_start=lambda song, i, n: starts.append(song.title),
+        sleep=lambda _s: None,
+    )
+    assert starts == ["Two"]  # not fired for the skipped track
+
+
 def test_silent_capture_aborts_batch(tmp_path):
     # A silent recording (no audio reached the device, e.g. RDP redirection) aborts the whole
     # batch after the first track, writes no WAV, and is flagged silent.

@@ -47,6 +47,7 @@ class BatchWorker(QThread):
 class RecordWorker(QThread):
     """Runs a batch loopback re-recording off the UI thread."""
 
+    started_track = Signal(object, int, int)  # (Song, index, total) before each capture
     progress = Signal(object)  # RecordResult, emitted per track
     completed = Signal(list)  # list[RecordResult]
     failed = Signal(str)
@@ -83,6 +84,7 @@ class RecordWorker(QThread):
                 self._playlist_name,
                 self._output_dir,
                 on_result=self.progress.emit,
+                on_track_start=lambda song, i, n: self.started_track.emit(song, i, n),
                 should_stop=self.isInterruptionRequested,
             )
             self.completed.emit(results)

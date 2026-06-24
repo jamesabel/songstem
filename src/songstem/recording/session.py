@@ -65,6 +65,7 @@ def record_playlist(
     playlist_name: str,
     output_dir: Path,
     on_result: ProgressCallback | None = None,
+    on_track_start: Callable[[Song, int, int], None] | None = None,
     *,
     lead_in: float = 0.3,
     tail: float = 0.5,
@@ -80,18 +81,24 @@ def record_playlist(
     Per-track failures are captured in the returned RecordResult list rather than aborting
     the whole batch. `should_stop` is polled between tracks and during each track's playback;
     when it returns True the batch stops promptly and the in-progress track is not saved.
+    `on_track_start(song, index, total)` fires just before a track is recorded (not for
+    skipped tracks), so callers can show which song is currently being captured.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     for stale in output_dir.glob("*.tmp"):  # leftover temp files from a prior crash
         stale.unlink(missing_ok=True)
     results: list[RecordResult] = []
-    for track in controller.playlist_tracks(playlist_name):
+    tracks = controller.playlist_tracks(playlist_name)
+    total = len(tracks)
+    for index, track in enumerate(tracks, start=1):
         if should_stop():
             break
         existing = output_dir / wav_filename(track.song)
         if _output_already_good(existing, track.duration):
             result = RecordResult(song=track.song, path=existing, skipped=True)
         else:
+            if on_track_start is not None:
+                on_track_start(track.song, index, total)
             result = _record_one(
                 controller, recorder, track, output_dir,
                 lead_in=lead_in, tail=tail, poll=poll,
