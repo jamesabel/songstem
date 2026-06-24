@@ -72,14 +72,17 @@ class MainWindow(QMainWindow):
         self._done_jobs = 0
 
         # Persisted selection state. _populating suppresses save signals while the song
-        # list is being filled; _restoring does the same while playlists are first loaded.
+        # list is being filled; _restoring does the same while playlists are first loaded;
+        # _settings_loaded gates separation-widget saves until the initial restore is done.
         self.state = UiStateStore()
         self._populating = False
         self._restoring = False
+        self._settings_loaded = False
 
         self.setWindowTitle("Songstem")
         self.resize(960, 640)
         self._build_ui()
+        self._restore_separation_settings()
         self._refresh_playlists()
 
     # ------------------------------------------------------------------ UI build
@@ -126,6 +129,7 @@ class MainWindow(QMainWindow):
         self.stem_combo = QComboBox()
         for stem in StemType:
             self.stem_combo.addItem(stem.value.capitalize(), stem)
+        self.stem_combo.currentIndexChanged.connect(self._save_separation_settings)
         layout.addWidget(self.stem_combo)
 
         layout.addWidget(QLabel("Muted-mix levels (per stem):"))
@@ -164,6 +168,7 @@ class MainWindow(QMainWindow):
         slider.setValue(100)
         value_label = QLabel("100%")
         slider.valueChanged.connect(lambda v, lbl=value_label: lbl.setText(f"{v}%"))
+        slider.valueChanged.connect(self._save_separation_settings)
         row.addWidget(slider, stretch=2)
         row.addWidget(value_label)
         self._gain_sliders[stem] = slider
@@ -429,6 +434,40 @@ class MainWindow(QMainWindow):
         if chosen:
             self.settings.output_dir = Path(chosen)
             self.output_label.setText(chosen)
+            self._save_separation_settings()
+
+    def _restore_separation_settings(self) -> None:
+        """Restore the Separation widget (isolate stem, gains, output dir) from preferences."""
+        self._settings_loaded = False  # suppress saves while we set widget values
+        saved_out = self.state.output_dir
+        if saved_out:
+            self.settings.output_dir = Path(saved_out)
+            self.output_label.setText(saved_out)
+
+        stem = self.state.isolate_stem
+        if stem:
+            index = self.stem_combo.findData(stem)
+            if index >= 0:
+                self.stem_combo.setCurrentIndex(index)
+
+        gains = self.state.get_stem_gains()
+        if gains:
+            for stem_type, slider in self._gain_sliders.items():
+                if stem_type.value in gains:
+                    slider.setValue(int(gains[stem_type.value]))
+
+        self._settings_loaded = True  # subsequent widget changes now persist
+
+    def _save_separation_settings(self, *_args) -> None:
+        if not self._settings_loaded:
+            return  # ignore signals fired while building/restoring the UI
+        data = self.stem_combo.currentData()
+        if data is not None:
+            self.state.isolate_stem = data.value if hasattr(data, "value") else str(data)
+        self.state.set_stem_gains(
+            {stem.value: slider.value() for stem, slider in self._gain_sliders.items()}
+        )
+        self.state.output_dir = str(self.settings.output_dir)
 
     def _load_selected_output(self, index: int) -> None:
         path = self.output_combo.itemData(index)

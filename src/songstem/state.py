@@ -14,6 +14,7 @@ underlying SQLite handles are closed promptly.
 from __future__ import annotations
 
 import hashlib
+import json
 
 from attr import attrib, attrs
 from pref import Pref, PrefStore
@@ -38,6 +39,9 @@ def song_key(song: Song) -> str:
 @attrs
 class _GeneralPref(Pref):
     selected_playlist: str = attrib(default="")
+    isolate_stem: str = attrib(default="")  # StemType value, e.g. "bass"
+    output_dir: str = attrib(default="")
+    stem_gains_json: str = attrib(default="")  # JSON {stem_value: percent}
 
 
 def _songs_table(playlist: str) -> str:
@@ -62,6 +66,40 @@ class UiStateStore:
     @selected_playlist.setter
     def selected_playlist(self, name: str) -> None:
         self._general.selected_playlist = name
+
+    # separation widget settings ---------------------------------------
+
+    @property
+    def isolate_stem(self) -> str:
+        """Saved isolate-stem value (e.g. "bass"), or "" if never saved."""
+        return self._general.isolate_stem
+
+    @isolate_stem.setter
+    def isolate_stem(self, stem: str) -> None:
+        self._general.isolate_stem = stem
+
+    @property
+    def output_dir(self) -> str:
+        """Saved output directory, or "" if never saved."""
+        return self._general.output_dir
+
+    @output_dir.setter
+    def output_dir(self, path: str) -> None:
+        self._general.output_dir = path
+
+    def get_stem_gains(self) -> dict[str, int] | None:
+        """Saved per-stem gain percentages, or None if never saved."""
+        raw = self._general.stem_gains_json
+        if not raw:
+            return None
+        try:
+            data = json.loads(raw)
+        except ValueError:
+            return None
+        return {str(k): int(v) for k, v in data.items()}
+
+    def set_stem_gains(self, gains: dict[str, int]) -> None:
+        self._general.stem_gains_json = json.dumps(gains)
 
     # selected songs per playlist --------------------------------------
 

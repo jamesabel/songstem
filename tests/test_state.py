@@ -40,3 +40,23 @@ def test_empty_selection_is_distinct_from_unsaved(tmp_path):
 
 def test_default_playlist_is_empty(tmp_path):
     assert _store(tmp_path).selected_playlist == ""
+
+
+def test_separation_settings_round_trip(tmp_path):
+    db = str(tmp_path / "state.db")
+    s = UiStateStore(file_name=db)
+    s.isolate_stem = "bass"
+    s.output_dir = r"C:\out"
+    s.set_stem_gains({"bass": 0, "vocals": 80})
+
+    again = UiStateStore(file_name=db)  # simulate relaunch
+    assert again.isolate_stem == "bass"
+    assert again.output_dir == r"C:\out"
+    assert again.get_stem_gains() == {"bass": 0, "vocals": 80}
+
+
+def test_separation_settings_default_unset(tmp_path):
+    s = _store(tmp_path)
+    assert s.isolate_stem == ""
+    assert s.output_dir == ""
+    assert s.get_stem_gains() is None
