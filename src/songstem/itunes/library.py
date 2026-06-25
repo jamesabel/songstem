@@ -63,8 +63,10 @@ class ITunesLibrary(LibrarySource):
 
         songs: list[Song] = []
         tracks = playlist.Tracks
+        # ItemByPlayOrder yields the playlist's displayed order (honoring any column sort);
+        # Item(i) is iTunes' internal database order, which can differ.
         for i in range(1, tracks.Count + 1):
-            track = tracks.Item(i)
+            track = tracks.ItemByPlayOrder(i)
             songs.append(_track_to_song(track))
         return songs
 
