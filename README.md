@@ -12,7 +12,8 @@ for the full specification.
 
 ## Requirements
 
-- Windows (x86, Intel/AMD), **Python 3.11–3.13** (not 3.14 — PySide6 6.11 crashes on 3.14)
+- Windows (x86, Intel/AMD), **Python 3.11+** (use the regular CPython build, not the
+  free-threaded `3.14t`)
 - Apple Music / iTunes installed (used to read playlists)
 
 ## Supported audio sources (important)
@@ -84,8 +85,16 @@ feature or lyric fetching via `Settings.make_cheatsheet` / `Settings.fetch_lyric
 
 ## Setup
 
+Easiest — creates `.venv` with **Python 3.14** and installs everything:
+
 ```pwsh
-python -m venv .venv
+.\setup_venv.bat
+```
+
+Or manually (use the regular build, **not** the free-threaded `3.14t`):
+
+```pwsh
+py -3.14 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
 ```
@@ -97,6 +106,18 @@ songstem            # via the installed gui-script entry point
 # or
 python -m songstem
 ```
+
+## Using the app
+
+1. **Pick a playlist** at the top. Songstem lists its songs in the playlist's iTunes order;
+   check the ones to process (**Select all** / **Select none** help). Songs with no usable
+   audio (DRM-protected, cloud-only) are greyed out with a tooltip explaining what to do.
+2. **Choose the stem** to isolate and adjust the per-stem **muted-mix levels**.
+3. Press **Run**. Separation runs in a background process so the window stays responsive; the
+   progress bar shows `N / M songs`. Press **Stop** to cancel.
+4. Each song yields a **solo** and a **muted** WAV (plus a cheat sheet) in the output folder —
+   preview them in the built-in player. Your selections, output folder, and window
+   size/position are remembered between launches.
 
 ## Test & lint
 
@@ -112,11 +133,19 @@ src/songstem/
   __main__.py      Application entry point (boots the PySide app)
   app.py           QApplication bootstrap
   config.py        Paths and user settings
-  models.py        Core data types (Song, AudioClip, SeparationJob)
-  itunes/          Apple Music / iTunes playlist access (COM automation)
+  models.py        Core data types (Song, AudioClip, SeparationJob, JobResult)
+  state.py         SQLite-backed persistence of UI state (via the `pref` library)
+  icon.py          Application icon loader
+  itunes/          Apple Music / iTunes playlist access + playback (COM automation)
+  folder_source.py LibrarySource over a folder of audio files (recorded WAVs, CD rips)
   separation/      Pluggable stem-separation backends (ABC + registry + Demucs)
-  audio/           Audio I/O, solo/mute mixing, and playback
-  pipeline/        Batch job orchestration
-  gui/             PySide windows and widgets
+  audio/           Audio I/O (incl. atomic + DRM detection), solo/mute mixing, playback
+  pipeline/        Batch orchestration; runs separation in a subprocess
+  recording/       Loopback re-recording of playlists to DRM-free WAVs
+  analysis/        Key/tempo/note analysis and cheat-sheet generation
+  utils/           Filename helpers, ffmpeg detection/install
+  gui/             PySide windows, widgets, and worker threads
+  resources/       App icon (svg/ico/png)
+scripts/           Dev scripts (e.g. generate_icon.py)
 tests/             Unit tests
 ```
