@@ -25,28 +25,72 @@ class BatchWorker(QThread):
 
     def __init__(
         self,
-        separator: Separator,
         jobs: list[SeparationJob],
-        cheat_sheet_maker=None,
+        config: dict,
+        *,
+        separator: Separator | None = None,  # in-thread fallback only
+        cheat_sheet_maker=None,  # in-thread fallback only
+        use_subprocess: bool = True,
         parent=None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("BatchWorker")  # so a "Destroyed while running" warning names it
-        self._separator = separator
         self._jobs = jobs
+        self._config = config
+        self._separator = separator
         self._cheat_sheet_maker = cheat_sheet_maker
+        self._use_subprocess = use_subprocess
 
     def run(self) -> None:  # executed on the worker thread
         try:
-            processor = BatchProcessor(self._separator, self._cheat_sheet_maker)
-            results: list[JobResult] = processor.run(
-                self._jobs,
-                on_result=self.progress.emit,
-                should_stop=self.isInterruptionRequested,
-            )
-            self.completed.emit(results)
+            if self._use_subprocess:
+                results = self._run_in_subprocess()
+            else:
+                results = self._run_in_thread()
+            if results is not None:  # None means already reported via `failed`
+                self.completed.emit(results)
         except Exception as exc:  # pragma: no cover - GUI-thread safety net
             self.failed.emit(str(exc))
+
+    def _run_in_thread(self) -> list[JobResult]:
+        processor = BatchProcessor(self._separator, self._cheat_sheet_maker)
+        return processor.run(
+            self._jobs, on_result=self.progress.emit, should_stop=self.isInterruptionRequested
+        )
+
+    def _run_in_subprocess(self) -> list[JobResult] | None:
+        import multiprocessing as mp
+        from queue import Empty
+
+        from songstem.pipeline.process_runner import DONE, JobFailure, run_jobs
+
+        ctx = mp.get_context("spawn")
+        queue = ctx.Queue()
+        proc = ctx.Process(
+            target=run_jobs, args=(self._jobs, self._config, queue), daemon=True
+        )
+        proc.start()
+        results: list[JobResult] = []
+        try:
+            while True:
+                if self.isInterruptionRequested():
+                    proc.terminate()
+                    return results
+                try:
+                    item = queue.get(timeout=0.2)
+                except Empty:
+                    continue  # keep checking for interruption
+                if item == DONE:
+                    return results
+                if isinstance(item, JobFailure):
+                    self.failed.emit(item.message)
+                    return None
+                results.append(item)
+                self.progress.emit(item)
+        finally:
+            if proc.is_alive():
+                proc.terminate()
+            proc.join(5)
 
 
 class RecordWorker(QThread):
