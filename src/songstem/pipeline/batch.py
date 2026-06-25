@@ -7,18 +7,27 @@ here (off the UI thread), receiving a JobResult per song via the optional progre
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
+from typing import TYPE_CHECKING
 
 from songstem.audio import io, mixer
 from songstem.models import JobResult, SeparationJob
 from songstem.separation.base import Separator
 from songstem.utils.naming import output_filename
 
+if TYPE_CHECKING:
+    from songstem.analysis.session import CheatSheetMaker
+
 ProgressCallback = Callable[[JobResult], None]
 
 
 class BatchProcessor:
-    def __init__(self, separator: Separator) -> None:
+    def __init__(
+        self,
+        separator: Separator,
+        cheat_sheet_maker: CheatSheetMaker | None = None,
+    ) -> None:
         self._separator = separator
+        self._cheat_sheet_maker = cheat_sheet_maker
 
     def run(
         self,
@@ -45,6 +54,21 @@ class BatchProcessor:
 
             solo_path = io.save(solo, job.output_dir / output_filename(job, "solo"))
             muted_path = io.save(muted, job.output_dir / output_filename(job, "muted"))
-            return JobResult(job=job, solo_path=solo_path, muted_path=muted_path)
+            cheatsheet_path = self._make_cheat_sheet(job, solo)
+            return JobResult(
+                job=job,
+                solo_path=solo_path,
+                muted_path=muted_path,
+                cheatsheet_path=cheatsheet_path,
+            )
         except Exception as exc:  # surfaced per-song so one failure doesn't abort the batch
             return JobResult(job=job, error=str(exc))
+
+    def _make_cheat_sheet(self, job: SeparationJob, solo):
+        """Best-effort cheat sheet from the in-memory solo; never fails the separation job."""
+        if self._cheat_sheet_maker is None:
+            return None
+        try:
+            return self._cheat_sheet_maker.make(solo, job.song, job.target, job.output_dir)
+        except Exception:
+            return None

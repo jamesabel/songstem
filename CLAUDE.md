@@ -66,6 +66,12 @@ behind a seam so the core logic stays importable and testable in isolation:
   `clock`/`sleep`). Both heavy seams have ABCs + fakes.
 - `folder_source.FolderLibrary` — a `LibrarySource` over a folder of audio files (the recorded
   WAVs, CD rips, etc.), so non-iTunes audio can be selected and separated.
+- `analysis/` — player cheat sheets for isolated stems. Pure core (key via
+  Krumhansl–Schmuckler in `keys`, note grouping in `notes`, LRC parse + note→lyric mapping,
+  markdown builder in `cheatsheet`) imports nothing heavy; `analyzer.LibrosaAnalyzer` (librosa)
+  and `lyrics.SyncedLyricsProvider` (network) are behind ABCs with fakes. `session.generate_cheat_sheet`
+  / `CheatSheetMaker` orchestrate it; `pipeline.batch` calls the maker after the solo is saved
+  (best-effort — analysis failures never fail the job). Monophonic-only notes (bass/vocals).
 - `gui/` + `app.py` + `__main__.py` — PySide bootstrap, `MainWindow` (playlist/song picker,
   stem selector, per-stem gain sliders, output player, loopback re-record), and
   `worker.BatchWorker` / `worker.RecordWorker`, `QThread`s that run separation / re-recording

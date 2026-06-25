@@ -18,6 +18,8 @@ dependencies = [
     "numpy>=1.26",
     "soundfile>=0.12",       # audio read/write (libsndfile)
     "demucs>=4.0",           # default stem-separation backend
+    "librosa>=0.11",         # key/tempo/note analysis for cheat sheets
+    "syncedlyrics>=1.0",     # best-effort synced lyrics for cheat sheets
     "pref>=0.4",             # SQLite-backed persistence of GUI selection state
     "sounddevice>=0.4",      # loopback capture from VB-Audio virtual cable
     "pywin32>=306 ; sys_platform == 'win32'",  # iTunes/Apple Music COM automation

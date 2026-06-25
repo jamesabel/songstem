@@ -27,15 +27,17 @@ class BatchWorker(QThread):
         self,
         separator: Separator,
         jobs: list[SeparationJob],
+        cheat_sheet_maker=None,
         parent=None,
     ) -> None:
         super().__init__(parent)
         self._separator = separator
         self._jobs = jobs
+        self._cheat_sheet_maker = cheat_sheet_maker
 
     def run(self) -> None:  # executed on the worker thread
         try:
-            processor = BatchProcessor(self._separator)
+            processor = BatchProcessor(self._separator, self._cheat_sheet_maker)
             results: list[JobResult] = processor.run(
                 self._jobs, on_result=self.progress.emit
             )

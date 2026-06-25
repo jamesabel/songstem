@@ -82,6 +82,7 @@ class JobResult:
     job: SeparationJob
     solo_path: Path | None = None
     muted_path: Path | None = None
+    cheatsheet_path: Path | None = None
     error: str | None = None
 
     @property

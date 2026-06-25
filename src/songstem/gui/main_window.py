@@ -312,6 +312,12 @@ class MainWindow(QMainWindow):
         if hasattr(separator, "device"):
             separator.device = self.settings.device
 
+        maker = None
+        if self.settings.make_cheatsheet:
+            from songstem.analysis.session import default_maker
+
+            maker = default_maker(fetch_lyrics=self.settings.fetch_lyrics)
+
         self._total_jobs = len(jobs)
         self._done_jobs = 0
         self.progress_bar.setRange(0, self._total_jobs)
@@ -319,7 +325,7 @@ class MainWindow(QMainWindow):
         self._set_busy(True)
         self._log(f"Processing {self._total_jobs} song(s) — isolating {target.value}…")
 
-        self._worker = BatchWorker(separator, jobs)
+        self._worker = BatchWorker(separator, jobs, maker)
         self._worker.progress.connect(self._on_progress)
         self._worker.completed.connect(self._on_completed)
         self._worker.failed.connect(self._on_failed)
@@ -357,6 +363,8 @@ class MainWindow(QMainWindow):
             for path in (result.solo_path, result.muted_path):
                 if path is not None:
                     self.output_combo.addItem(path.name, path)
+            if result.cheatsheet_path is not None:
+                self._log(f"📝 cheat sheet → {result.cheatsheet_path.name}")
         else:
             self._log(f"✗ {title}: {result.error}")
 

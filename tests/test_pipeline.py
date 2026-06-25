@@ -66,3 +66,38 @@ def test_cloud_only_song_reports_error():
     [result] = BatchProcessor(FakeSeparator()).run([job])
     assert not result.ok
     assert "cloud-only" in result.error
+
+
+class _FakeMaker:
+    def __init__(self, raises=False):
+        self.raises = raises
+
+    def make(self, clip, song, target, output_dir):
+        if self.raises:
+            raise RuntimeError("analysis blew up")
+        path = output_dir / "sheet.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("ok", encoding="utf-8")
+        return path
+
+
+def _bass_job(tmp_path):
+    src = _write_input(tmp_path / "input.wav")
+    return SeparationJob(
+        song=Song(title="Track", artist="Artist", location=src),
+        target=StemType.BASS,
+        output_dir=tmp_path / "out",
+    )
+
+
+def test_cheat_sheet_maker_sets_path(tmp_path):
+    [result] = BatchProcessor(FakeSeparator(), _FakeMaker()).run([_bass_job(tmp_path)])
+    assert result.ok
+    assert result.cheatsheet_path is not None and result.cheatsheet_path.exists()
+
+
+def test_cheat_sheet_failure_does_not_fail_job(tmp_path):
+    [result] = BatchProcessor(FakeSeparator(), _FakeMaker(raises=True)).run([_bass_job(tmp_path)])
+    assert result.ok  # separation still succeeds
+    assert result.cheatsheet_path is None
+    assert result.solo_path.exists()

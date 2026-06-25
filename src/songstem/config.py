@@ -35,6 +35,10 @@ class Settings:
     device: str = "cpu"
     # Output audio format/container written by audio.io.
     output_format: str = "wav"
+    # Generate a player cheat-sheet (.md) next to each solo stem after separation.
+    make_cheatsheet: bool = True
+    # Download synced lyrics (network) for the cheat sheet's lyrics+notes section.
+    fetch_lyrics: bool = True
 
     def ensure_dirs(self) -> None:
         self.output_dir.mkdir(parents=True, exist_ok=True)

@@ -70,6 +70,18 @@ the cable, so captures come out **silent**. To record over RDP:
 (Routing iTunes specifically to CABLE Input is what matters; it must not be playing to
 "Remote Audio".)
 
+## Cheat sheets
+
+After each separation, songstem writes a one-page Markdown **cheat sheet** next to the solo
+stem (`Artist - Title [bass cheatsheet].md`) with the song's **key**, **tempo**, scale, and —
+for monophonic stems (bass, vocals) — the **note patterns** and a **lyrics-with-notes** table
+mapping the notes to what's being sung. Polyphonic stems (guitar/piano/other) get a reduced
+sheet (key/tempo/scale only), since per-note detection isn't reliable for them.
+
+Lyrics are fetched best-effort over the network (synced lyrics, personal-use) and silently
+omitted if unavailable. Note/key accuracy is best on clean isolated bass/vocals. Disable the
+feature or lyric fetching via `Settings.make_cheatsheet` / `Settings.fetch_lyrics`.
+
 ## Setup
 
 ```pwsh
