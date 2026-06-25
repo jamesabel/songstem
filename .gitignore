@@ -18,9 +18,12 @@ env/
 .vscode/
 .idea/
 
-# Songstem runtime output (generated solo/muted stem files & model cache)
+# Songstem runtime output (generated solo/muted stem files, cheat sheets & model cache)
 output/
 models/
+temp/
 *.wav
 *.flac
 *.m4a
+*.mp3
+*[* cheatsheet].md
