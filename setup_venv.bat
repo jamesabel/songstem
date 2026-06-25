@@ -23,7 +23,7 @@ echo Creating virtual environment in .venv (Python 3.14) ...
 py -3.14 -m venv .venv
 if errorlevel 1 (
     echo Failed to create virtual environment with Python 3.14.
-    echo Install Python 3.14 (regular, not free-threaded) and retry.
+    echo Install Python 3.14 - the regular build, not free-threaded - and retry.
     exit /b 1
 )
 
