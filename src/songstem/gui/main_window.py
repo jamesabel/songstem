@@ -68,6 +68,7 @@ class MainWindow(QMainWindow):
         self._gain_sliders: dict[StemType, QSlider] = {}
         self._total_jobs = 0
         self._done_jobs = 0
+        self._stopping = False
 
         # Persisted selection state. _populating suppresses save signals while the song
         # list is being filled; _restoring does the same while playlists are first loaded;
@@ -157,7 +158,7 @@ class MainWindow(QMainWindow):
         layout.addLayout(out_row)
 
         self.run_button = QPushButton("Run")
-        self.run_button.clicked.connect(self._run)
+        self.run_button.clicked.connect(self._on_run_button)
         layout.addWidget(self.run_button)
 
         self.record_button = QPushButton(_RECORD_LABEL)
@@ -327,6 +328,17 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------------ run batch
 
+    def _on_run_button(self) -> None:
+        # The Run button toggles: start a separation, or stop one already in progress.
+        if self._worker is not None:
+            self._stopping = True
+            self._worker.requestInterruption()
+            self.run_button.setEnabled(False)
+            self.run_button.setText("Stopping…")
+            self._log("Stopping…")
+            return
+        self._run()
+
     def _run(self) -> None:
         # StemType subclasses str, so Qt stores the item data as a plain str — coerce back.
         target = StemType(self.stem_combo.currentData())
@@ -352,9 +364,11 @@ class MainWindow(QMainWindow):
 
         self._total_jobs = len(jobs)
         self._done_jobs = 0
+        self._stopping = False
         self.progress_bar.setRange(0, self._total_jobs)
         self.progress_bar.setValue(0)
-        self._set_busy(True)
+        self.record_button.setEnabled(False)  # no re-recording while separating
+        self.run_button.setText("Stop")  # the Run button becomes a Stop toggle
         self._log(f"Processing {self._total_jobs} song(s) — isolating {target.value}…")
 
         # Parent to the window so dropping the Python reference (in the completed/failed slot)
@@ -410,14 +424,20 @@ class MainWindow(QMainWindow):
 
     def _on_completed(self, results: list[JobResult]) -> None:
         ok = sum(1 for r in results if r.ok)
-        self._log(f"Done. {ok}/{len(results)} succeeded.")
-        self._set_busy(False)
-        self._worker = None
+        verb = "Stopped" if self._stopping else "Done"
+        self._log(f"{verb}. {ok}/{len(results)} succeeded.")
+        self._reset_run_ui()
 
     def _on_failed(self, message: str) -> None:
         self._log(f"Batch failed: {message}")
-        self._set_busy(False)
+        self._reset_run_ui()
+
+    def _reset_run_ui(self) -> None:
         self._worker = None
+        self._stopping = False
+        self.run_button.setText("Run")
+        self.run_button.setEnabled(True)
+        self.record_button.setEnabled(True)
 
     # ------------------------------------------------------------ loopback recording
 
@@ -520,10 +540,6 @@ class MainWindow(QMainWindow):
         self.record_button.setText(_RECORD_LABEL)
         self.record_button.setEnabled(True)
         self.run_button.setEnabled(True)
-
-    def _set_busy(self, busy: bool) -> None:
-        self.run_button.setEnabled(not busy)
-        self.record_button.setEnabled(not busy)
 
     # ------------------------------------------------------------------ misc
 
