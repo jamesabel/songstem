@@ -2,12 +2,30 @@
 
 from __future__ import annotations
 
+import os
 import sys
 
 from songstem.config import Settings
 
+# Qt Multimedia's FFmpeg backend prints a one-line version banner and dumps each loaded file's
+# stream info ("Input #0 …") to stderr via libav. The `.*` form silences the per-file dump; the
+# `.info`/`.debug` forms silence the banner — both are needed. Set before QApplication so Qt
+# picks it up; preserve any user-set rules.
+_QUIET_FFMPEG_RULES = (
+    "qt.multimedia.ffmpeg.*=false"
+    ";qt.multimedia.ffmpeg.info=false"
+    ";qt.multimedia.ffmpeg.debug=false"
+)
+
+
+def _silence_ffmpeg_logging() -> None:
+    existing = os.environ.get("QT_LOGGING_RULES", "")
+    if "qt.multimedia.ffmpeg" not in existing:
+        os.environ["QT_LOGGING_RULES"] = ";".join(filter(None, [existing, _QUIET_FFMPEG_RULES]))
+
 
 def run() -> int:
+    _silence_ffmpeg_logging()
     from PySide6.QtWidgets import QApplication, QMessageBox
 
     from songstem.gui import MainWindow
