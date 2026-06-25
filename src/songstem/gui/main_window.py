@@ -325,7 +325,12 @@ class MainWindow(QMainWindow):
         self._set_busy(True)
         self._log(f"Processing {self._total_jobs} song(s) — isolating {target.value}…")
 
-        self._worker = BatchWorker(separator, jobs, maker)
+        # Parent to the window so dropping the Python reference (in the completed/failed slot)
+        # can't delete the QThread while run() is still executing — that aborts the process
+        # ("QThread: Destroyed while thread is still running"). finished -> deleteLater frees it
+        # safely once run() has returned.
+        self._worker = BatchWorker(separator, jobs, maker, parent=self)
+        self._worker.finished.connect(self._worker.deleteLater)
         self._worker.progress.connect(self._on_progress)
         self._worker.completed.connect(self._on_completed)
         self._worker.failed.connect(self._on_failed)
@@ -403,8 +408,10 @@ class MainWindow(QMainWindow):
             f"Ensure iTunes output is routed to 'CABLE Input'."
         )
         self._record_worker = RecordWorker(
-            ITunesPlaybackController(), LoopbackRecorder(), playlist, self._recordings_dir
+            ITunesPlaybackController(), LoopbackRecorder(), playlist, self._recordings_dir,
+            parent=self,  # owned by the window; see _run for why
         )
+        self._record_worker.finished.connect(self._record_worker.deleteLater)
         self._record_worker.started_track.connect(self._on_record_started)
         self._record_worker.progress.connect(self._on_record_progress)
         self._record_worker.completed.connect(self._on_record_completed)
@@ -533,10 +540,13 @@ class MainWindow(QMainWindow):
             self.player.load(Path(path))
 
     def closeEvent(self, event) -> None:
-        # Stop an in-progress re-record so the worker thread exits cleanly before we close.
-        if self._record_worker is not None:
-            self._record_worker.requestInterruption()
-            self._record_worker.wait()
+        # Stop any in-progress worker and wait for it to finish before the window (its parent)
+        # is destroyed — otherwise the still-running QThread is torn down and aborts the process.
+        # Separation checks the interrupt between songs; re-record stops within a poll cycle.
+        for worker in (self._record_worker, self._worker):
+            if worker is not None and worker.isRunning():
+                worker.requestInterruption()
+                worker.wait()
         # Saves happen incrementally on change; persist once more on exit as a safety net.
         name = self.playlist_combo.currentText()
         if name:

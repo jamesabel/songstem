@@ -101,3 +101,16 @@ def test_cheat_sheet_failure_does_not_fail_job(tmp_path):
     assert result.ok  # separation still succeeds
     assert result.cheatsheet_path is None
     assert result.solo_path.exists()
+
+
+def test_should_stop_halts_batch_between_jobs(tmp_path):
+    jobs = [_bass_job(tmp_path), _bass_job(tmp_path), _bass_job(tmp_path)]
+    seen = {"n": 0}
+
+    def on_result(_r):
+        seen["n"] += 1
+
+    results = BatchProcessor(FakeSeparator()).run(
+        jobs, on_result=on_result, should_stop=lambda: seen["n"] >= 1
+    )
+    assert len(results) == 1  # stopped after the first job

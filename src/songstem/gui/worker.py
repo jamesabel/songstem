@@ -31,6 +31,7 @@ class BatchWorker(QThread):
         parent=None,
     ) -> None:
         super().__init__(parent)
+        self.setObjectName("BatchWorker")  # so a "Destroyed while running" warning names it
         self._separator = separator
         self._jobs = jobs
         self._cheat_sheet_maker = cheat_sheet_maker
@@ -39,7 +40,9 @@ class BatchWorker(QThread):
         try:
             processor = BatchProcessor(self._separator, self._cheat_sheet_maker)
             results: list[JobResult] = processor.run(
-                self._jobs, on_result=self.progress.emit
+                self._jobs,
+                on_result=self.progress.emit,
+                should_stop=self.isInterruptionRequested,
             )
             self.completed.emit(results)
         except Exception as exc:  # pragma: no cover - GUI-thread safety net
@@ -63,23 +66,23 @@ class RecordWorker(QThread):
         parent=None,
     ) -> None:
         super().__init__(parent)
+        self.setObjectName("RecordWorker")  # names it in any QThread warning
         self._controller = controller
         self._recorder = recorder
         self._playlist_name = playlist_name
         self._output_dir = output_dir
 
     def run(self) -> None:  # executed on the worker thread
-        # iTunes is driven over COM, which must be initialized on *this* thread (Qt does not
-        # do it for worker QThreads). Without this, every track.Play() raises
-        # "CoInitialize has not been called".
         try:
-            import pythoncom
-
-            pythoncom.CoInitialize()
-            com_initialized = True
-        except Exception:  # pragma: no cover - non-Windows / no pywin32
-            com_initialized = False
+            import pythoncom  # Windows only; absent elsewhere
+        except ImportError:  # pragma: no cover - non-Windows / no pywin32
+            pythoncom = None
         try:
+            # iTunes is driven over COM, which must be initialized on *this* thread (Qt does
+            # not do it for worker QThreads) or every track.Play() raises "CoInitialize has
+            # not been called". A real CoInitialize failure surfaces via the `failed` signal.
+            if pythoncom is not None:
+                pythoncom.CoInitialize()
             results = record_playlist(
                 self._controller,
                 self._recorder,
@@ -90,10 +93,8 @@ class RecordWorker(QThread):
                 should_stop=self.isInterruptionRequested,
             )
             self.completed.emit(results)
-        except Exception as exc:  # pragma: no cover - GUI-thread safety net
+        except Exception as exc:  # boundary catch-all: report rather than kill the thread
             self.failed.emit(str(exc))
         finally:
-            if com_initialized:
-                import pythoncom
-
+            if pythoncom is not None:
                 pythoncom.CoUninitialize()

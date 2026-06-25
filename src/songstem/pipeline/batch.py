@@ -33,9 +33,12 @@ class BatchProcessor:
         self,
         jobs: Iterable[SeparationJob],
         on_result: ProgressCallback | None = None,
+        should_stop: Callable[[], bool] = lambda: False,
     ) -> list[JobResult]:
         results: list[JobResult] = []
         for job in jobs:
+            if should_stop():  # checked between songs so the UI can cancel a long batch
+                break
             result = self._run_one(job)
             results.append(result)
             if on_result is not None:
