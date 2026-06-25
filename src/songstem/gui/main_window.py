@@ -109,6 +109,17 @@ class MainWindow(QMainWindow):
 
         songs_group = QGroupBox("Songs (checked are processed)")
         songs_layout = QVBoxLayout(songs_group)
+
+        select_row = QHBoxLayout()
+        select_all = QPushButton("Select all")
+        select_all.clicked.connect(lambda: self._set_all_checked(True))
+        select_none = QPushButton("Select none")
+        select_none.clicked.connect(lambda: self._set_all_checked(False))
+        select_row.addWidget(select_all)
+        select_row.addWidget(select_none)
+        select_row.addStretch(1)
+        songs_layout.addLayout(select_row)
+
         self.song_list = QListWidget()
         self.song_list.itemChanged.connect(self._on_item_changed)
         songs_layout.addWidget(self.song_list)
@@ -278,6 +289,19 @@ class MainWindow(QMainWindow):
 
     def _resolve_source_path(self, song: Song, playlist_name: str) -> Path | None:
         return resolve_source(song, self._recordings_dir_for(playlist_name))
+
+    def _set_all_checked(self, checked: bool) -> None:
+        """Check/uncheck every processable (enabled) song, then persist once."""
+        state = Qt.Checked if checked else Qt.Unchecked
+        self._populating = True  # suppress per-item save signals during the bulk change
+        try:
+            for i in range(self.song_list.count()):
+                item = self.song_list.item(i)
+                if item.flags() & Qt.ItemIsEnabled:  # skip greyed-out (unavailable) songs
+                    item.setCheckState(state)
+        finally:
+            self._populating = False
+        self._save_current_songs()
 
     def _on_item_changed(self, _item: QListWidgetItem) -> None:
         if self._populating:
