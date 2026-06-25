@@ -36,6 +36,7 @@ from songstem.audio.player import Player
 from songstem.config import Settings
 from songstem.folder_source import FolderLibrary
 from songstem.gui.worker import BatchWorker, RecordWorker
+from songstem.icon import app_icon
 from songstem.itunes.library import LibrarySource
 from songstem.itunes.playback import ITunesPlaybackController
 from songstem.models import JobResult, SeparationJob, Song, StemType
@@ -76,6 +77,7 @@ class MainWindow(QMainWindow):
         self._settings_loaded = False
 
         self.setWindowTitle("Songstem")
+        self.setWindowIcon(app_icon())
         self.resize(960, 640)  # default; overridden by saved geometry if present
         self._restore_geometry()
         self._build_ui()
