@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="256" y2="256" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7C3AED"/>
+      <stop offset="1" stop-color="#2563EB"/>
+    </linearGradient>
+  </defs>
+  <!-- App tile -->
+  <rect x="0" y="0" width="256" height="256" rx="56" fill="url(#bg)"/>
+  <!-- Equalizer "stems": white bars, with the isolated stem highlighted in amber -->
+  <g>
+    <rect x="41"  y="86" width="22" height="84"  rx="11" fill="#FFFFFF" opacity="0.9"/>
+    <rect x="79"  y="62" width="22" height="132" rx="11" fill="#FFFFFF" opacity="0.9"/>
+    <rect x="117" y="44" width="22" height="168" rx="11" fill="#FBBF24"/>
+    <rect x="155" y="68" width="22" height="120" rx="11" fill="#FFFFFF" opacity="0.9"/>
+    <rect x="193" y="82" width="22" height="92"  rx="11" fill="#FFFFFF" opacity="0.9"/>
+  </g>
+</svg>
