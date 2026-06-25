@@ -55,8 +55,9 @@ class BatchProcessor:
             solo = mixer.build_solo(stems, job.target)
             muted = mixer.build_muted_mix(stems, job.target, job.stem_gains)
 
-            solo_path = io.save(solo, job.output_dir / output_filename(job, "solo"))
-            muted_path = io.save(muted, job.output_dir / output_filename(job, "muted"))
+            # Atomic so terminating the batch mid-write never leaves a partial output .wav.
+            solo_path = io.save_atomic(solo, job.output_dir / output_filename(job, "solo"))
+            muted_path = io.save_atomic(muted, job.output_dir / output_filename(job, "muted"))
             cheatsheet_path = self._make_cheat_sheet(job, solo)
             return JobResult(
                 job=job,
