@@ -16,10 +16,11 @@ when soundfile can't decode a file.
 
 ### Runtime constraint
 
-Use **Python 3.11–3.13**, not 3.14. PySide6 6.11 crashes with a native fault
-(`0xC0000409`, faulting module `Qt6Core.dll`) on Python 3.14 — reproduced across multiple
-PySide6 apps, not a songstem bug. `setup_venv.bat` creates the venv with `py -3.13`;
-`requires-python` is capped `<3.14`. Raise the cap when a PySide6 release supports 3.14.
+Python **3.11+** (the project runs on **3.14**). Use the regular CPython build, **not** the
+free-threaded `3.14t` (no-GIL) one — torch/PySide6/numba have no free-threaded wheels.
+`setup_venv.bat` creates the venv with `py -3.14`. (A `0xC0000409` Qt6Core abort once blamed on
+3.14 was actually the QThread-destroyed-while-running bug, now fixed in `gui/worker` +
+`MainWindow`; it was never version-specific.)
 
 ### Commands
 

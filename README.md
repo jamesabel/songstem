@@ -12,7 +12,8 @@ for the full specification.
 
 ## Requirements
 
-- Windows (x86, Intel/AMD), **Python 3.11–3.13** (not 3.14 — PySide6 6.11 crashes on 3.14)
+- Windows (x86, Intel/AMD), **Python 3.11+** (use the regular CPython build, not the
+  free-threaded `3.14t`)
 - Apple Music / iTunes installed (used to read playlists)
 
 ## Supported audio sources (important)
@@ -84,16 +85,16 @@ feature or lyric fetching via `Settings.make_cheatsheet` / `Settings.fetch_lyric
 
 ## Setup
 
-Easiest — creates `.venv` with **Python 3.13** and installs everything:
+Easiest — creates `.venv` with **Python 3.14** and installs everything:
 
 ```pwsh
 .\setup_venv.bat
 ```
 
-Or manually (use Python 3.13, **not** 3.14):
+Or manually (use the regular build, **not** the free-threaded `3.14t`):
 
 ```pwsh
-py -3.13 -m venv .venv
+py -3.14 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
 ```
