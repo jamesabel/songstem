@@ -367,6 +367,8 @@ class MainWindow(QMainWindow):
         self._stopping = False
         self.progress_bar.setRange(0, self._total_jobs)
         self.progress_bar.setValue(0)
+        self.progress_bar.setFormat("%v / %m songs  ·  %p%")  # count and percentage
+        self.progress_bar.setTextVisible(True)
         self.record_button.setEnabled(False)  # no re-recording while separating
         self.run_button.setText("Stop")  # the Run button becomes a Stop toggle
         self._log(f"Processing {self._total_jobs} song(s) — isolating {target.value}…")
