@@ -40,6 +40,7 @@ from songstem.icon import app_icon
 from songstem.itunes.library import LibrarySource
 from songstem.itunes.playback import ITunesPlaybackController
 from songstem.models import JobResult, SeparationJob, Song, StemType
+from songstem.pipeline.process_runner import make_config
 from songstem.recording.loopback import LoopbackRecorder
 from songstem.recording.session import wav_filename
 from songstem.separation import get_backend
@@ -335,15 +336,19 @@ class MainWindow(QMainWindow):
             return
 
         self.settings.output_dir.mkdir(parents=True, exist_ok=True)
-        separator = get_backend(self.settings.backend)
-        if hasattr(separator, "device"):
-            separator.device = self.settings.device
+        config = make_config(self.settings)
 
-        maker = None
-        if self.settings.make_cheatsheet:
-            from songstem.analysis.session import default_maker
+        # The subprocess rebuilds the separator/maker from `config`; only the in-thread
+        # fallback needs them constructed here.
+        separator = maker = None
+        if not self.settings.use_subprocess:
+            separator = get_backend(self.settings.backend)
+            if hasattr(separator, "device"):
+                separator.device = self.settings.device
+            if self.settings.make_cheatsheet:
+                from songstem.analysis.session import default_maker
 
-            maker = default_maker(fetch_lyrics=self.settings.fetch_lyrics)
+                maker = default_maker(fetch_lyrics=self.settings.fetch_lyrics)
 
         self._total_jobs = len(jobs)
         self._done_jobs = 0
@@ -356,7 +361,10 @@ class MainWindow(QMainWindow):
         # can't delete the QThread while run() is still executing — that aborts the process
         # ("QThread: Destroyed while thread is still running"). finished -> deleteLater frees it
         # safely once run() has returned.
-        self._worker = BatchWorker(separator, jobs, maker, parent=self)
+        self._worker = BatchWorker(
+            jobs, config, separator=separator, cheat_sheet_maker=maker,
+            use_subprocess=self.settings.use_subprocess, parent=self,
+        )
         self._worker.finished.connect(self._worker.deleteLater)
         self._worker.progress.connect(self._on_progress)
         self._worker.completed.connect(self._on_completed)

@@ -39,6 +39,9 @@ class Settings:
     make_cheatsheet: bool = True
     # Download synced lyrics (network) for the cheat sheet's lyrics+notes section.
     fetch_lyrics: bool = True
+    # Run separation in a subprocess so CPU-bound work (Demucs, librosa) can't stall the GUI
+    # via the GIL. False runs it in a worker thread instead (used by tests).
+    use_subprocess: bool = True
 
     def ensure_dirs(self) -> None:
         self.output_dir.mkdir(parents=True, exist_ok=True)

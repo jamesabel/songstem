@@ -53,7 +53,11 @@ behind a seam so the core logic stays importable and testable in isolation:
   `build_muted_mix`; muted = sum of all stems except the target, with per-stem gains, clipped
   to [-1, 1]), `player` (Qt Multimedia wrapper).
 - `pipeline/batch.py` — `BatchProcessor.run` drives jobs one song at a time; per-song failures
-  become `JobResult.error` instead of aborting the batch.
+  become `JobResult.error` instead of aborting the batch. By default the GUI runs this in a
+  **child process** (`pipeline/process_runner.run_jobs`, spawned by `gui.worker.BatchWorker`) so
+  CPU-bound work (Demucs, librosa) keeps its own GIL and can't stall the UI; `JobResult`s stream
+  back over a queue (audio stays on disk). `Settings.use_subprocess=False` runs it in-thread
+  (tests). The worker `terminate()`s the child on interrupt/close.
 - `state.py` — SQLite-backed UI persistence via the `pref` library (>=0.4). `UiStateStore`
   remembers the last-selected playlist and per-playlist checked songs (keyed by `song_key`),
   restored on relaunch. Built on `pref.PrefStore`; `PrefOrderedSet.get(default=None)`
