@@ -60,3 +60,10 @@ def test_separation_settings_default_unset(tmp_path):
     assert s.isolate_stem == ""
     assert s.output_dir == ""
     assert s.get_stem_gains() is None
+
+
+def test_window_geometry_round_trips(tmp_path):
+    db = str(tmp_path / "state.db")
+    assert UiStateStore(file_name=db).window_geometry == ""  # default
+    UiStateStore(file_name=db).window_geometry = "AAAA1234=="
+    assert UiStateStore(file_name=db).window_geometry == "AAAA1234=="

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QByteArray, Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -76,7 +76,8 @@ class MainWindow(QMainWindow):
         self._settings_loaded = False
 
         self.setWindowTitle("Songstem")
-        self.resize(960, 640)
+        self.resize(960, 640)  # default; overridden by saved geometry if present
+        self._restore_geometry()
         self._build_ui()
         self._restore_separation_settings()
         self._refresh_playlists()
@@ -563,6 +564,19 @@ class MainWindow(QMainWindow):
         if path is not None:
             self.player.load(Path(path))
 
+    def _restore_geometry(self) -> None:
+        """Restore the saved window size/position (and maximized state) if any."""
+        saved = self.state.window_geometry
+        if not saved:
+            return
+        try:
+            self.restoreGeometry(QByteArray.fromBase64(saved.encode("ascii")))
+        except Exception:  # corrupt/incompatible value — keep the default geometry
+            pass
+
+    def _save_geometry(self) -> None:
+        self.state.window_geometry = bytes(self.saveGeometry().toBase64()).decode("ascii")
+
     def closeEvent(self, event) -> None:
         # Stop any in-progress worker and wait for it to finish before the window (its parent)
         # is destroyed — otherwise the still-running QThread is torn down and aborts the process.
@@ -572,6 +586,7 @@ class MainWindow(QMainWindow):
                 worker.requestInterruption()
                 worker.wait()
         # Saves happen incrementally on change; persist once more on exit as a safety net.
+        self._save_geometry()
         name = self.playlist_combo.currentText()
         if name:
             self.state.selected_playlist = name

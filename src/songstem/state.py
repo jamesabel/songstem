@@ -42,6 +42,7 @@ class _GeneralPref(Pref):
     isolate_stem: str = attrib(default="")  # StemType value, e.g. "bass"
     output_dir: str = attrib(default="")
     stem_gains_json: str = attrib(default="")  # JSON {stem_value: percent}
+    window_geometry: str = attrib(default="")  # base64 of QMainWindow.saveGeometry()
 
 
 def _songs_table(playlist: str) -> str:
@@ -66,6 +67,16 @@ class UiStateStore:
     @selected_playlist.setter
     def selected_playlist(self, name: str) -> None:
         self._general.selected_playlist = name
+
+    # window geometry (base64 of QMainWindow.saveGeometry()) -----------
+
+    @property
+    def window_geometry(self) -> str:
+        return self._general.window_geometry
+
+    @window_geometry.setter
+    def window_geometry(self, value: str) -> None:
+        self._general.window_geometry = value
 
     # separation widget settings ---------------------------------------
 
