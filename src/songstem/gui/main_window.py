@@ -661,8 +661,11 @@ class MainWindow(QMainWindow):
             self._log(f"✗ {result.song.title}: {result.error}")
 
     def _on_pitch_completed(self, results: list) -> None:
-        ok = sum(1 for r in results if r.ok)
-        self._log(f"Pitch shift done. {ok}/{len(results)} written.")
+        ok = [r for r in results if r.ok]
+        dirs = {r.path.parent for r in ok}
+        # Files are written next to each source, usually all in one folder — name it when so.
+        where = f" → {next(iter(dirs))}" if len(dirs) == 1 else ""
+        self._log(f"Pitch shift done. {len(ok)}/{len(results)} written{where}.")
         self._reset_pitch_ui()
 
     def _on_pitch_failed(self, message: str) -> None:
