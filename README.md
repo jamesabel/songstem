@@ -83,6 +83,20 @@ Lyrics are fetched best-effort over the network (synced lyrics, personal-use) an
 omitted if unavailable. Note/key accuracy is best on clean isolated bass/vocals. Disable the
 feature or lyric fetching via `Settings.make_cheatsheet` / `Settings.fetch_lyrics`.
 
+## Pitch shifting
+
+Each song in the list has an optional **Pitch** control (in half-steps, −12…+12) — ½ step = ±1,
+a full step = ±2. Set a non-zero value for the songs you want transposed and click
+**"Create pitch-shifted WAVs"** to write a new transposed copy next to each song's source file,
+with the shift in the name, e.g. `Artist - Title [+2st].wav` / `[-1st]`. Songs left at 0 are
+skipped, so nothing is written unless you ask for it.
+
+Handy for practicing in a comfortable key or matching an alternate tuning. The shift applies to
+the song's resolved source (its DRM-free original, or a re-recorded WAV) and runs in the
+background; finished files are added to the built-in player so you can audition them. Each per-song
+setting is remembered between launches. This is independent of separation — the pitch-shifted WAVs
+are written to disk only; to separate one, load its folder as the source and press **Run**.
+
 ## Setup
 
 Easiest — creates `.venv` with **Python 3.14** and installs everything:
@@ -119,6 +133,9 @@ python -m songstem
    preview them in the built-in player. Your selections, output folder, and window
    size/position are remembered between launches.
 
+Optionally set a per-song **Pitch** (half-steps) and click **"Create pitch-shifted WAVs"** to
+write transposed copies — see [Pitch shifting](#pitch-shifting) above.
+
 ## Test & lint
 
 ```pwsh
@@ -139,7 +156,7 @@ src/songstem/
   itunes/          Apple Music / iTunes playlist access + playback (COM automation)
   folder_source.py LibrarySource over a folder of audio files (recorded WAVs, CD rips)
   separation/      Pluggable stem-separation backends (ABC + registry + Demucs)
-  audio/           Audio I/O (incl. atomic + DRM detection), solo/mute mixing, playback
+  audio/           Audio I/O (incl. atomic + DRM detection), solo/mute mixing, pitch shift, playback
   pipeline/        Batch orchestration; runs separation in a subprocess
   recording/       Loopback re-recording of playlists to DRM-free WAVs
   analysis/        Key/tempo/note analysis and cheat-sheet generation

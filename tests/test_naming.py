@@ -1,7 +1,12 @@
 from pathlib import Path
 
 from songstem.models import SeparationJob, Song, StemType
-from songstem.utils.naming import cheatsheet_filename, output_filename, sanitize
+from songstem.utils.naming import (
+    cheatsheet_filename,
+    output_filename,
+    pitch_shifted_filename,
+    sanitize,
+)
 
 
 def test_sanitize_strips_illegal_windows_chars():
@@ -25,3 +30,9 @@ def test_output_filename_includes_stem_and_variant():
 def test_cheatsheet_filename():
     song = Song(title="My Song", artist="The Band")
     assert cheatsheet_filename(song, "bass") == "The Band - My Song [bass cheatsheet].md"
+
+
+def test_pitch_shifted_filename_encodes_sign():
+    src = Path("The Band - My Song.wav")
+    assert pitch_shifted_filename(src, 2) == "The Band - My Song [+2st].wav"
+    assert pitch_shifted_filename(src, -1) == "The Band - My Song [-1st].wav"
