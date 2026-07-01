@@ -12,19 +12,22 @@ from pathlib import Path
 
 from PySide6.QtCore import QByteArray, Qt
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QComboBox,
     QFileDialog,
     QGroupBox,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
-    QListWidget,
-    QListWidgetItem,
     QMainWindow,
     QMessageBox,
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
     QSlider,
+    QSpinBox,
+    QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -35,7 +38,7 @@ from songstem.audio.io import is_drm_protected
 from songstem.audio.player import Player
 from songstem.config import Settings
 from songstem.folder_source import FolderLibrary
-from songstem.gui.worker import BatchWorker, RecordWorker
+from songstem.gui.worker import BatchWorker, PitchWorker, RecordWorker
 from songstem.icon import app_icon
 from songstem.itunes.library import LibrarySource
 from songstem.itunes.playback import ITunesPlaybackController
@@ -48,8 +51,11 @@ from songstem.state import UiStateStore, song_key
 from songstem.utils.naming import sanitize
 
 _RECORD_LABEL = "Re-record playlist → WAV (loopback)"
+_PITCH_LABEL = "Create pitch-shifted WAVs"
 # Item data role holding the resolved audio source path (str), or None if unavailable.
 _SOURCE_ROLE = Qt.UserRole + 1
+# Widest per-song transpose offered in the UI, in half-steps (one octave each way).
+_PITCH_RANGE = 12
 _NEEDS_AUDIO_TOOLTIP = (
     "No usable audio for this song. Either add a DRM-free version of it to your library, "
     "or use “Re-record playlist → WAV (loopback)” to capture it first."
@@ -64,10 +70,13 @@ class MainWindow(QMainWindow):
         self.player = Player()
         self._worker: BatchWorker | None = None
         self._record_worker: RecordWorker | None = None
+        self._pitch_worker: PitchWorker | None = None
         self._recordings_dir: Path | None = None
         self._gain_sliders: dict[StemType, QSlider] = {}
         self._total_jobs = 0
         self._done_jobs = 0
+        self._pitch_total = 0
+        self._pitch_done = 0
         self._stopping = False
 
         # Persisted selection state. _populating suppresses save signals while the song
@@ -125,9 +134,16 @@ class MainWindow(QMainWindow):
         select_row.addStretch(1)
         songs_layout.addLayout(select_row)
 
-        self.song_list = QListWidget()
-        self.song_list.itemChanged.connect(self._on_item_changed)
-        songs_layout.addWidget(self.song_list)
+        self.song_table = QTableWidget(0, 2)
+        self.song_table.setHorizontalHeaderLabels(["Song", "Pitch (½-steps)"])
+        self.song_table.verticalHeader().setVisible(False)
+        self.song_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.song_table.setSelectionMode(QAbstractItemView.NoSelection)  # checkboxes drive it
+        header = self.song_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self.song_table.itemChanged.connect(self._on_item_changed)
+        songs_layout.addWidget(self.song_table)
         row.addWidget(songs_group, stretch=2)
 
         row.addWidget(self._build_controls_group(), stretch=1)
@@ -168,6 +184,14 @@ class MainWindow(QMainWindow):
         )
         self.record_button.clicked.connect(self._on_record_button)
         layout.addWidget(self.record_button)
+
+        self.pitch_button = QPushButton(_PITCH_LABEL)
+        self.pitch_button.setToolTip(
+            "For each checked song with a non-zero Pitch, write a transposed copy next to its "
+            "source, e.g. 'Artist - Title [+2st].wav'. Songs left at 0 are skipped."
+        )
+        self.pitch_button.clicked.connect(self._on_pitch_button)
+        layout.addWidget(self.pitch_button)
 
         layout.addStretch(1)
         return group
@@ -256,7 +280,7 @@ class MainWindow(QMainWindow):
     def _load_songs(self, playlist_name: str) -> None:
         self._populating = True  # suppress per-item save signals during fill
         try:
-            self.song_list.clear()
+            self.song_table.setRowCount(0)
             if not playlist_name:
                 return
             try:
@@ -265,13 +289,17 @@ class MainWindow(QMainWindow):
                 self._log(f"Could not read songs: {exc}")
                 return
             saved = self.state.get_selected_songs(playlist_name)  # list[str] | None
+            shifts = self.state.get_pitch_shifts(playlist_name)  # {song_key: semitones}
             for song in songs:
                 source = self._resolve_source_path(song, playlist_name)  # Path | None
                 blocked = source is None
                 rerecorded = source is not None and not _is_original(song, source)
                 note = "needs re-record" if blocked else ("re-recorded" if rerecorded else None)
 
-                item = QListWidgetItem(self._song_label(song, note))
+                row = self.song_table.rowCount()
+                self.song_table.insertRow(row)
+
+                item = QTableWidgetItem(self._song_label(song, note))
                 item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
                 if blocked:
                     checked = False
@@ -285,7 +313,16 @@ class MainWindow(QMainWindow):
                     item.setToolTip(_NEEDS_AUDIO_TOOLTIP)
                 item.setData(Qt.UserRole, song)
                 item.setData(_SOURCE_ROLE, str(source) if source is not None else None)
-                self.song_list.addItem(item)
+                self.song_table.setItem(row, 0, item)
+
+                spin = QSpinBox()
+                spin.setRange(-_PITCH_RANGE, _PITCH_RANGE)
+                spin.setSingleStep(1)
+                spin.setSuffix(" st")
+                spin.setValue(int(shifts.get(song_key(song), 0)))
+                spin.setEnabled(not blocked)  # nothing to shift without a source
+                spin.valueChanged.connect(self._on_pitch_changed)
+                self.song_table.setCellWidget(row, 1, spin)
         finally:
             self._populating = False
 
@@ -300,28 +337,48 @@ class MainWindow(QMainWindow):
         state = Qt.Checked if checked else Qt.Unchecked
         self._populating = True  # suppress per-item save signals during the bulk change
         try:
-            for i in range(self.song_list.count()):
-                item = self.song_list.item(i)
+            for item in self._song_items():
                 if item.flags() & Qt.ItemIsEnabled:  # skip greyed-out (unavailable) songs
                     item.setCheckState(state)
         finally:
             self._populating = False
         self._save_current_songs()
 
-    def _on_item_changed(self, _item: QListWidgetItem) -> None:
+    def _on_item_changed(self, _item: QTableWidgetItem) -> None:
         if self._populating:
             return
         self._save_current_songs()
+
+    def _on_pitch_changed(self, _value: int) -> None:
+        if self._populating:
+            return
+        self._save_pitch_shifts()
 
     def _save_current_songs(self) -> None:
         name = self.playlist_combo.currentText()
         if name:
             self.state.set_selected_songs(name, self._checked_song_keys())
 
+    def _save_pitch_shifts(self) -> None:
+        name = self.playlist_combo.currentText()
+        if not name:
+            return
+        mapping = {
+            song_key(item.data(Qt.UserRole)): self._pitch_for(row)
+            for row, item in enumerate(self._song_items())
+        }
+        self.state.set_pitch_shifts(name, mapping)  # zero entries are dropped by the store
+
+    def _song_items(self) -> list[QTableWidgetItem]:
+        return [self.song_table.item(r, 0) for r in range(self.song_table.rowCount())]
+
+    def _pitch_for(self, row: int) -> int:
+        spin = self.song_table.cellWidget(row, 1)
+        return spin.value() if spin is not None else 0
+
     def _checked_song_keys(self) -> list[str]:
         keys: list[str] = []
-        for i in range(self.song_list.count()):
-            item = self.song_list.item(i)
+        for item in self._song_items():
             if item.checkState() == Qt.Checked:
                 keys.append(song_key(item.data(Qt.UserRole)))
         return keys
@@ -370,6 +427,7 @@ class MainWindow(QMainWindow):
         self.progress_bar.setFormat("%v / %m songs  ·  %p%")  # count and percentage
         self.progress_bar.setTextVisible(True)
         self.record_button.setEnabled(False)  # no re-recording while separating
+        self.pitch_button.setEnabled(False)  # no pitch-shifting while separating
         self.run_button.setText("Stop")  # the Run button becomes a Stop toggle
         self._log(f"Processing {self._total_jobs} song(s) — isolating {target.value}…")
 
@@ -390,8 +448,7 @@ class MainWindow(QMainWindow):
     def _collect_jobs(self, target: StemType) -> list[SeparationJob]:
         gains = {stem: slider.value() / 100.0 for stem, slider in self._gain_sliders.items()}
         jobs: list[SeparationJob] = []
-        for i in range(self.song_list.count()):
-            item = self.song_list.item(i)
+        for item in self._song_items():
             if item.checkState() != Qt.Checked:
                 continue
             song: Song = item.data(Qt.UserRole)
@@ -440,6 +497,7 @@ class MainWindow(QMainWindow):
         self.run_button.setText("Run")
         self.run_button.setEnabled(True)
         self.record_button.setEnabled(True)
+        self.pitch_button.setEnabled(True)
 
     # ------------------------------------------------------------ loopback recording
 
@@ -458,6 +516,7 @@ class MainWindow(QMainWindow):
             return
         self._recordings_dir = self._recordings_dir_for(playlist)
         self.run_button.setEnabled(False)
+        self.pitch_button.setEnabled(False)  # no pitch-shifting while re-recording
         self.record_button.setText("Stop recording")
         self.progress_bar.setRange(0, 0)  # indeterminate until the first track reports a total
         self._log(
@@ -542,6 +601,82 @@ class MainWindow(QMainWindow):
         self.record_button.setText(_RECORD_LABEL)
         self.record_button.setEnabled(True)
         self.run_button.setEnabled(True)
+        self.pitch_button.setEnabled(True)
+
+    # ------------------------------------------------------------------ pitch shift
+
+    def _on_pitch_button(self) -> None:
+        # The button toggles: start pitch-shifting, or stop one already in progress.
+        if self._pitch_worker is not None:
+            self._pitch_worker.requestInterruption()
+            self.pitch_button.setEnabled(False)
+            self.pitch_button.setText("Stopping…")
+            self._log("Stopping after the current song…")
+            return
+
+        items = self._collect_pitch_items()
+        if not items:
+            QMessageBox.information(
+                self, "Songstem", "No checked songs have a pitch shift set (all at 0 st)."
+            )
+            return
+
+        self._pitch_total = len(items)
+        self._pitch_done = 0
+        self.progress_bar.setRange(0, self._pitch_total)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setFormat("%v / %m pitch-shifted  ·  %p%")
+        self.progress_bar.setTextVisible(True)
+        self.run_button.setEnabled(False)  # one heavy job at a time
+        self.record_button.setEnabled(False)
+        self.pitch_button.setText("Stop")
+        self._log(f"Pitch-shifting {self._pitch_total} song(s)…")
+
+        self._pitch_worker = PitchWorker(items, parent=self)  # owned by the window; see _run
+        self._pitch_worker.finished.connect(self._pitch_worker.deleteLater)
+        self._pitch_worker.progress.connect(self._on_pitch_progress)
+        self._pitch_worker.completed.connect(self._on_pitch_completed)
+        self._pitch_worker.failed.connect(self._on_pitch_failed)
+        self._pitch_worker.start()
+
+    def _collect_pitch_items(self) -> list[tuple[Song, Path, int]]:
+        """(song, source, semitones) for each checked song with a non-zero, resolvable shift."""
+        items: list[tuple[Song, Path, int]] = []
+        for row, item in enumerate(self._song_items()):
+            if item.checkState() != Qt.Checked:
+                continue
+            semitones = self._pitch_for(row)
+            source = item.data(_SOURCE_ROLE)
+            if semitones and source:
+                items.append((item.data(Qt.UserRole), Path(source), semitones))
+        return items
+
+    def _on_pitch_progress(self, result) -> None:
+        self._pitch_done += 1
+        self.progress_bar.setValue(self._pitch_done)
+        if result.ok:
+            self._log(f"✓ {result.path.name}")
+            self.output_combo.addItem(result.path.name, result.path)  # auditionable
+        else:
+            self._log(f"✗ {result.song.title}: {result.error}")
+
+    def _on_pitch_completed(self, results: list) -> None:
+        ok = sum(1 for r in results if r.ok)
+        self._log(f"Pitch shift done. {ok}/{len(results)} written.")
+        self._reset_pitch_ui()
+
+    def _on_pitch_failed(self, message: str) -> None:
+        self._log(f"Pitch shift failed: {message}")
+        self._reset_pitch_ui()
+
+    def _reset_pitch_ui(self) -> None:
+        self._pitch_worker = None
+        self.progress_bar.setFormat("")
+        self.progress_bar.setTextVisible(False)
+        self.pitch_button.setText(_PITCH_LABEL)
+        self.pitch_button.setEnabled(True)
+        self.run_button.setEnabled(True)
+        self.record_button.setEnabled(True)
 
     # ------------------------------------------------------------------ misc
 
@@ -609,7 +744,7 @@ class MainWindow(QMainWindow):
         # Stop any in-progress worker and wait for it to finish before the window (its parent)
         # is destroyed — otherwise the still-running QThread is torn down and aborts the process.
         # Separation checks the interrupt between songs; re-record stops within a poll cycle.
-        for worker in (self._record_worker, self._worker):
+        for worker in (self._record_worker, self._worker, self._pitch_worker):
             if worker is not None and worker.isRunning():
                 worker.requestInterruption()
                 worker.wait()

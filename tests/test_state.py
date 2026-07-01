@@ -62,6 +62,25 @@ def test_separation_settings_default_unset(tmp_path):
     assert s.get_stem_gains() is None
 
 
+def test_pitch_shifts_round_trip_per_playlist(tmp_path):
+    db = str(tmp_path / "state.db")
+    UiStateStore(file_name=db).set_pitch_shifts("Practice", {"id:1": 2, "id:2": -1})
+    again = UiStateStore(file_name=db)  # simulate relaunch
+    assert again.get_pitch_shifts("Practice") == {"id:1": 2, "id:2": -1}
+    assert again.get_pitch_shifts("Other") == {}  # isolated per playlist
+
+
+def test_pitch_shifts_default_empty(tmp_path):
+    assert _store(tmp_path).get_pitch_shifts("Never") == {}
+
+
+def test_pitch_shifts_drop_zero_entries(tmp_path):
+    # Zero means "no shift" — it must not be persisted, so it defaults back to 0 on reload.
+    store = _store(tmp_path)
+    store.set_pitch_shifts("Practice", {"id:1": 0, "id:2": 3})
+    assert store.get_pitch_shifts("Practice") == {"id:2": 3}
+
+
 def test_window_geometry_round_trips(tmp_path):
     db = str(tmp_path / "state.db")
     assert UiStateStore(file_name=db).window_geometry == ""  # default

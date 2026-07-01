@@ -12,7 +12,7 @@ from pathlib import Path
 from PySide6.QtCore import QThread, Signal
 
 from songstem.itunes.playback import PlaybackController
-from songstem.models import JobResult, SeparationJob
+from songstem.models import JobResult, SeparationJob, Song
 from songstem.pipeline import BatchProcessor
 from songstem.recording import Recorder, record_playlist
 from songstem.separation.base import Separator
@@ -142,3 +142,33 @@ class RecordWorker(QThread):
         finally:
             if pythoncom is not None:
                 pythoncom.CoUninitialize()
+
+
+class PitchWorker(QThread):
+    """Writes pitch-shifted WAVs off the UI thread.
+
+    librosa's phase-vocoder shift is CPU-heavy but releases the GIL, so a plain QThread keeps
+    the UI responsive without the subprocess plumbing that separation needs.
+    """
+
+    progress = Signal(object)  # PitchShiftResult, emitted per song
+    completed = Signal(list)  # list[PitchShiftResult]
+    failed = Signal(str)
+
+    def __init__(self, items: list[tuple[Song, Path, int]], parent=None) -> None:
+        super().__init__(parent)
+        self.setObjectName("PitchWorker")  # names it in any QThread warning
+        self._items = items
+
+    def run(self) -> None:  # executed on the worker thread
+        from songstem.audio.pitch import shift_songs
+
+        try:
+            results = shift_songs(
+                self._items,
+                on_result=self.progress.emit,
+                should_stop=self.isInterruptionRequested,
+            )
+            self.completed.emit(results)
+        except Exception as exc:  # boundary catch-all: report rather than kill the thread
+            self.failed.emit(str(exc))

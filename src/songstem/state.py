@@ -43,6 +43,7 @@ class _GeneralPref(Pref):
     output_dir: str = attrib(default="")
     stem_gains_json: str = attrib(default="")  # JSON {stem_value: percent}
     window_geometry: str = attrib(default="")  # base64 of QMainWindow.saveGeometry()
+    pitch_shifts_json: str = attrib(default="")  # JSON {playlist: {song_key: semitones}}
 
 
 def _songs_table(playlist: str) -> str:
@@ -111,6 +112,39 @@ class UiStateStore:
 
     def set_stem_gains(self, gains: dict[str, int]) -> None:
         self._general.stem_gains_json = json.dumps(gains)
+
+    # per-song pitch shifts (half-steps) per playlist ------------------
+
+    def _all_pitch_shifts(self) -> dict[str, dict[str, int]]:
+        raw = self._general.pitch_shifts_json
+        if not raw:
+            return {}
+        try:
+            data = json.loads(raw)
+        except ValueError:
+            return {}
+        return {
+            str(pl): {str(k): int(v) for k, v in shifts.items()}
+            for pl, shifts in data.items()
+        }
+
+    def get_pitch_shifts(self, playlist: str) -> dict[str, int]:
+        """Saved {song_key: semitones} for `playlist`; {} when none were saved."""
+        if not playlist:
+            return {}
+        return self._all_pitch_shifts().get(playlist, {})
+
+    def set_pitch_shifts(self, playlist: str, mapping: dict[str, int]) -> None:
+        """Persist non-zero per-song shifts for `playlist` (zero entries are dropped)."""
+        if not playlist:
+            return
+        all_shifts = self._all_pitch_shifts()
+        cleaned = {key: int(st) for key, st in mapping.items() if st}
+        if cleaned:
+            all_shifts[playlist] = cleaned
+        else:
+            all_shifts.pop(playlist, None)
+        self._general.pitch_shifts_json = json.dumps(all_shifts)
 
     # selected songs per playlist --------------------------------------
 
