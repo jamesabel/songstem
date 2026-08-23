@@ -15,6 +15,9 @@ for the full specification.
 - Windows (x86, Intel/AMD), **Python 3.11+** (use the regular CPython build, not the
   free-threaded `3.14t`)
 - Apple Music / iTunes installed (used to read playlists)
+- **ffmpeg** — needed to decode iTunes/Apple Music `.m4a` (AAC/ALAC) input; WAV/FLAC work
+  without it. On startup songstem checks for it and, if missing, attempts a non-interactive
+  `winget install Gyan.FFmpeg`; if that fails it shows manual install steps.
 
 ## Supported audio sources (important)
 
@@ -50,8 +53,9 @@ Each track is played start-to-finish and captured to `…/output/recordings/<pla
 it finishes, that folder is loaded as the active source — select it and press **Run** to
 separate. (Capture is real-time, so a playlist takes about as long as its total runtime.)
 
-If a track is captured as silence, songstem flags it rather than saving an empty file — see
-below. Re-recording is **resumable**: a track is skipped if its output WAV already exists, has
+If a track is captured as silence, songstem discards it and stops the run rather than
+re-recording the whole playlist into empty files — a silent capture means audio isn't reaching
+the recording device (routing, or RDP — see below). Re-recording is **resumable**: a track is skipped if its output WAV already exists, has
 real audio, and is long enough (compared to the iTunes track length, or ≥1s if unknown). Each
 file is written atomically (temp file, then moved into place), so a crash or shutdown never
 leaves a partial file — the next run simply re-records whatever isn't complete.
@@ -86,10 +90,11 @@ feature or lyric fetching via `Settings.make_cheatsheet` / `Settings.fetch_lyric
 ## Pitch shifting
 
 Each song in the list has an optional **Pitch** control (in half-steps, −12…+12) — ½ step = ±1,
-a full step = ±2. Set a non-zero value for the songs you want transposed and click
-**"Create pitch-shifted WAVs"** to write a new transposed copy next to each song's source file,
-with the shift in the name, e.g. `Artist - Title [+2st].wav` / `[-1st]`. Songs left at 0 are
-skipped, so nothing is written unless you ask for it.
+a full step = ±2. Set a non-zero value for the songs you want transposed, make sure they are
+**checked**, and click **"Create pitch-shifted WAVs"** to write a new transposed copy next to
+each song's source file, with the shift in the name, e.g. `Artist - Title [+2st].wav` /
+`[-1st]`. Unchecked songs and songs left at 0 are skipped, so nothing is written unless you
+ask for it.
 
 Handy for practicing in a comfortable key or matching an alternate tuning. The shift applies to
 the song's resolved source (its DRM-free original, or a re-recorded WAV) and runs in the
