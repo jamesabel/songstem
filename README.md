@@ -168,6 +168,7 @@ src/songstem/
   utils/           Filename helpers, ffmpeg detection/install
   gui/             PySide windows, widgets, and worker threads
   resources/       App icon (svg/ico/png)
-scripts/           Dev scripts (e.g. generate_icon.py)
+doc/               Overview slide deck (regenerate: python scripts/generate_presentation.py)
+scripts/           Dev scripts (e.g. generate_icon.py, generate_presentation.py)
 tests/             Unit tests
 ```
