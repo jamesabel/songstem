@@ -1,4 +1,4 @@
-# Real-Time Instrument Removal for Apple Music on Windows
+# Instrument Removal for Apple Music on Windows
 
 ## Overview
 
