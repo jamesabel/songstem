@@ -1,6 +1,6 @@
 # Songstem
 
-Real-time instrument removal for Apple Music on Windows. A GUI desktop app that takes an
+Instrument removal for Apple Music on Windows. A GUI desktop app that takes an
 Apple Music / iTunes playlist and, for a selected instrument or vocal, batch-produces two
 files per song:
 
